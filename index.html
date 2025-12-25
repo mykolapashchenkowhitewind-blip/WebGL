@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>Cornucopia Surface - WebGL Visualization</title>
+    <title>Cornucopia Surface - WebGL Visualization with Phong Shading</title>
     <style>
         body {
             background-color: #111;
@@ -31,10 +31,11 @@
         #canvas-holder {
             margin: 20px auto;
             width: 800px;
-            height: 600px;
         }
         canvas {
             border: 1px solid #0f0;
+            display: block;
+            margin: 0 auto;
         }
         .info-panel {
             text-align: left;
@@ -44,6 +45,16 @@
             border-radius: 5px;
             margin: 20px auto;
             max-width: 800px;
+        }
+        .controls-panel {
+            margin: 20px auto;
+            display: inline-block;
+            background-color: rgba(0, 30, 0, 0.7);
+            padding: 15px;
+            border-radius: 5px;
+            text-align: left;
+            width: 90%;
+            box-sizing: border-box;
         }
         .math-formula {
             background-color: rgba(0, 30, 0, 0.5);
@@ -67,6 +78,79 @@
             margin: 25px auto;
             max-width: 600px;
         }
+        .slider-container {
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .slider-label {
+            width: 150px;
+            text-align: right;
+            margin-right: 15px;
+        }
+        .slider {
+            flex-grow: 1;
+            height: 5px;
+            background: #333;
+            outline: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #0f0;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .slider::-moz-range-thumb {
+            width: 15px;
+            height: 15px;
+            background: #0f0;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .slider-value {
+            width: 40px;
+            margin-left: 15px;
+            text-align: center;
+            font-weight: bold;
+            color: #0f0;
+        }
+        .parameter-row {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        .parameter-label {
+            display: inline-block;
+            width: 80px;
+        }
+        .parameter-input {
+            width: 80px;
+            background-color: #111;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 4px;
+        }
+        h3 {
+            margin-top: 0;
+            color: #0f0;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .granularity-section {
+            border-top: 1px solid #0f0;
+            padding-top: 15px;
+            margin-top: 20px;
+        }
     </style>
 
     <!-- Core libraries -->
@@ -75,98 +159,125 @@
     <script src="./shaders.js"></script>
     <script src="./cornucopia3.js"></script>
         
-        <script>
-            // Add event listener for the refresh button after the page loads
-            window.addEventListener('load', function() {
-                const refreshButton = document.getElementById('refresh-button');
-                const paramP = document.getElementById('param-p');
-                const paramM = document.getElementById('param-m');
-                const paramU = document.getElementById('param-u');
-                const paramV = document.getElementById('param-v');
-                
-                // Set initial values directly from the mathematical definition
-                // These values match exactly what's shown in the Mathematical Definition section
-                paramP.value = 0.15; // p = 0.15
-                paramM.value = 0.1;  // m = 0.1
-                paramU.value = 5;    // u ≤ 5π
-                paramV.value = 2;    // v ≤ 2π
-                
-                // Also ensure the model uses these exact values
-                setTimeout(function() {
-                    if (surface) {
-                        // Verify that the model parameters match the HTML definition
-                        if (surface.p != 0.15 || surface.m != 0.1 || 
-                            surface.uMax != 5 * Math.PI || surface.vMax != 2 * Math.PI) {
-                            console.log("Correcting model parameters to match Mathematical Definition");
-                            surface.p = 0.15;
-                            surface.m = 0.1;
-                            surface.uMax = 5 * Math.PI;
-                            surface.vMax = 2 * Math.PI;
-                            surface.initialize();
-                            draw();
-                        }
-                    }
-                }, 500);
-                
-                if (refreshButton) {
-                    refreshButton.addEventListener('click', function() {
-                        // Get values from inputs
-                        if (surface) {
-                            // Update parameters
-                            surface.p = parseFloat(paramP.value);
-                            surface.m = parseFloat(paramM.value);
-                            surface.uMax = parseFloat(paramU.value) * Math.PI;
-                            surface.vMax = parseFloat(paramV.value) * Math.PI;
-                            
-                            console.log("Applying new parameters:");
-                            console.log("p =", surface.p, "m =", surface.m, "uMax =", surface.uMax/Math.PI + "π", "vMax =", surface.vMax/Math.PI + "π");
-                            
-                            // Update formula display in the info panel
-                            const mathFormula = document.querySelector('.math-formula');
-                            if (mathFormula) {
-                                // Find the part after the parametric equations
-                                const whereSection = mathFormula.innerHTML.split('<strong>Where:</strong>');
-                                if (whereSection.length > 1) {
-                                    mathFormula.innerHTML = whereSection[0] + 
-                                        '<strong>Where:</strong><br>' +
-                                        '- p = ' + surface.p + ' (parameter p)<br>' +
-                                        '- m = ' + surface.m + ' (parameter m)<br>' +
-                                        '- 0 ≤ u ≤ ' + (surface.uMax/Math.PI) + 'π (lengthwise parameter)<br>' +
-                                        '- 0 ≤ v ≤ ' + (surface.vMax/Math.PI) + 'π (cross-section parameter)';
-                                }
-                            }
-                            
-                            // Reinitialize the model
-                            surface.initialize();
-                            
-                            // Redraw
-                            draw();
-                            
-                            console.log("Model updated with new parameters!");
-                            
-                            // Flash confirmation message
-                            const button = document.getElementById('refresh-button');
-                            button.textContent = "Parameters Applied!";
-                            button.style.backgroundColor = "#00ff99";
-                            setTimeout(function() {
-                                button.textContent = "Apply Parameters";
-                                button.style.backgroundColor = "#0f0";
-                            }, 1500);
-                        }
-                    });
-                }
-            });
+    <script>
+        // Add event listener for the refresh button after the page loads
+        window.addEventListener('load', function() {
+            const refreshButton = document.getElementById('refresh-button');
+            const paramP = document.getElementById('param-p');
+            const paramM = document.getElementById('param-m');
+            const paramU = document.getElementById('param-u');
+            const paramV = document.getElementById('param-v');
             
-            // No helper functions needed
-        </script>
+            // Set initial values directly from the mathematical definition
+            // These values match exactly what's shown in the Mathematical Definition section
+            paramP.value = 0.1; // p = 0.15
+            paramM.value = 0.2;  // m = 0.1
+            paramU.value = 4;    // u ≤ 5π
+            paramV.value = 2;    // v ≤ 2π
+
+            if (refreshButton) {
+                refreshButton.addEventListener('click', function() {
+                    // Get values from inputs
+                    if (surface) {
+                        // Update parameters
+                        surface.p = parseFloat(paramP.value);
+                        surface.m = parseFloat(paramM.value);
+                        surface.uMax = parseFloat(paramU.value) * Math.PI;
+                        surface.vMax = parseFloat(paramV.value) * Math.PI;
+                        
+                        console.log("Applying new parameters:");
+                        console.log("p =", surface.p, "m =", surface.m, "uMax =", surface.uMax/Math.PI + "π", "vMax =", surface.vMax/Math.PI + "π");
+                        
+                        // Update formula display in the info panel
+                        const mathFormula = document.querySelector('.math-formula');
+                        if (mathFormula) {
+                            // Find the part after the parametric equations
+                            const whereSection = mathFormula.innerHTML.split('<strong>Where:</strong>');
+                            if (whereSection.length > 1) {
+                                mathFormula.innerHTML = whereSection[0] + 
+                                    '<strong>Where:</strong><br>' +
+                                    '- p = ' + surface.p + ' (parameter p)<br>' +
+                                    '- m = ' + surface.m + ' (parameter m)<br>' +
+                                    '- 0 ≤ u ≤ ' + (surface.uMax/Math.PI) + 'π (lengthwise parameter)<br>' +
+                                    '- 0 ≤ v ≤ ' + (surface.vMax/Math.PI) + 'π (cross-section parameter)';
+                            }
+                        }
+                        
+                        // Reinitialize the model
+                        surface.initialize();
+                        
+                        // Redraw
+                        draw();
+                        
+                        console.log("Model updated with new parameters!");
+                        
+                        // Flash confirmation message
+                        const button = document.getElementById('refresh-button');
+                        button.textContent = "Parameters Applied!";
+                        button.style.backgroundColor = "#00ff99";
+                        setTimeout(function() {
+                            button.textContent = "Apply Parameters";
+                            button.style.backgroundColor = "#0f0";
+                        }, 1500);
+                    }
+                });
+            }
+
+            // Add direct event listeners to granularity sliders
+            setupGranularitySliders();
+        });
+
+        // Function to directly update mesh when sliders change
+        function updateMeshGranularity() {
+            if (!surface) return;
+
+            const uSlider = document.getElementById("u-granularity");
+            const vSlider = document.getElementById("v-granularity");
+            const uValue = document.getElementById("u-gran-value");
+            const vValue = document.getElementById("v-gran-value");
+
+            if (uSlider && vSlider && uValue && vValue) {
+                const uSegments = parseInt(uSlider.value);
+                const vSegments = parseInt(vSlider.value);
+                
+                // Update display values
+                uValue.textContent = uSegments;
+                vValue.textContent = vSegments;
+
+                // Update the surface
+                console.log("Direct update from sliders: U=" + uSegments + ", V=" + vSegments);
+                surface.uSegments = uSegments;
+                surface.vSegments = vSegments;
+                surface.initialize();
+                draw();
+            }
+        }
+
+        // Setup granularity sliders with direct event handlers
+        function setupGranularitySliders() {
+            const uSlider = document.getElementById("u-granularity");
+            const vSlider = document.getElementById("v-granularity");
+            
+            if (uSlider && vSlider && surface) {
+                // Set initial values to match model
+                uSlider.value = surface.uSegments;
+                vSlider.value = surface.vSegments;
+                
+                document.getElementById("u-gran-value").textContent = surface.uSegments;
+                document.getElementById("v-gran-value").textContent = surface.vSegments;
+                
+                console.log("Granularity sliders initialized with values:", surface.uSegments, surface.vSegments);
+            }
+        }
+    </script>
 </head>
 <body onload="init()">
     <div class="container">
-        <h1>Cornucopia Surface - WebGL Visualization</h1>
+        <h1>Cornucopia Surface - WebGL Visualization with Phong Shading</h1>
         
         <div class="info-panel">
             <h2>Project Description</h2>
-            <p>This visualization demonstrates a 3D wireframe model of a "Cornucopia" surface rendered using WebGL.</p>
+            <p>This visualization demonstrates a 3D model of a "Cornucopia" surface rendered using WebGL with Phong shading and Facet Average normal calculation.</p>
             <p>The Cornucopia is a special case of a spiral-shaped surface "Shell without vertex". It's a cyclic surface with generatrix circles of variable radius that creates the distinctive horn-like shape.</p>
             
             <h2>Mathematical Definition</h2>
@@ -187,39 +298,64 @@
         </div>
         
         <div id="canvas-holder">
-            <canvas width="800" height="600" id="webglcanvas" style="background-color:black"></canvas>
-            <div style="margin-top: 10px; text-align: center;">
-                <div style="margin-bottom: 10px; display: inline-block; background-color: rgba(0, 30, 0, 0.7); padding: 10px; border-radius: 5px; text-align: left;">
-                    <div style="margin-bottom: 8px;">
-                        <label for="param-p" style="display: inline-block; width: 80px;">p value:</label>
-                        <input type="number" id="param-p" value="0.15" step="0.01" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
-                    </div>
-                    <div style="margin-bottom: 8px;">
-                        <label for="param-m" style="display: inline-block; width: 80px;">m value:</label>
-                        <input type="number" id="param-m" value="0.1" step="0.01" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
-                    </div>
-                    <div style="margin-bottom: 8px;">
-                        <label for="param-u" style="display: inline-block; width: 80px;">u max (π):</label>
-                        <input type="number" id="param-u" value="5" step="0.5" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
-                    </div>
-                    <div style="margin-bottom: 8px;">
-                        <label for="param-v" style="display: inline-block; width: 80px;">v max (π):</label>
-                        <input type="number" id="param-v" value="2" step="0.5" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
-                    </div>
+            <canvas width="800" height="600" id="webglcanvas" style="background-color:white"></canvas>
+        </div>
+        
+        <div class="controls-panel">
+            <h3>Surface Parameters</h3>
+            <div class="parameter-row">
+                <label class="parameter-label" for="param-p">p value:</label>
+                <input type="number" id="param-p" value="0.1" step="0.01" class="parameter-input">
+            </div>
+            <div class="parameter-row">
+                <label class="parameter-label" for="param-m">m value:</label>
+                <input type="number" id="param-m" value="0.2" step="0.01" class="parameter-input">
+            </div>
+            <div class="parameter-row">
+                <label class="parameter-label" for="param-u">u max (π):</label>
+                <input type="number" id="param-u" value="4" step="0.5" class="parameter-input">
+            </div>
+            <div class="parameter-row">
+                <label class="parameter-label" for="param-v">v max (π):</label>
+                <input type="number" id="param-v" value="2" step="0.5" class="parameter-input">
+            </div>
+            
+            <button id="refresh-button" style="margin-top: 10px; padding: 8px 16px; background-color: #0f0; color: black; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Apply Parameters</button>
+            
+            <div class="granularity-section">
+                <h3>Mesh Granularity</h3>
+                <div class="slider-container">
+                    <span class="slider-label">U Segments:</span>
+                    <input type="range" min="10" max="200" value="80" class="slider" id="u-granularity" oninput="updateMeshGranularity()">
+                    <span class="slider-value" id="u-gran-value">80</span>
                 </div>
-                <div style="margin-top: 10px;">
-                    <button id="refresh-button" style="padding: 8px 16px; background-color: #0f0; color: black; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Apply Parameters</button>
+                <div class="slider-container">
+                    <span class="slider-label">V Segments:</span>
+                    <input type="range" min="10" max="100" value="40" class="slider" id="v-granularity" oninput="updateMeshGranularity()">
+                    <span class="slider-value" id="v-gran-value">40</span>
                 </div>
             </div>
         </div>
         
-        <div style="height: 180px;"></div>
+        <div class="info-panel">
+            <h2>Implementation Details</h2>
+            <p>This implementation includes:</p>
+            <ul>
+                <li><strong>Phong Shading:</strong> Realistic lighting with ambient, diffuse, and specular components</li>
+                <li><strong>Facet Average Normal:</strong> Normals are calculated by averaging adjacent facet normals</li>
+                <li><strong>Rotating Light Source:</strong> A moving light that circles around the model</li>
+                <li><strong>Triangle Mesh:</strong> The surface is rendered with filled triangles using VBO with indices</li>
+                <li><strong>Adjustable Granularity:</strong> U and V segment sliders allow controlling the mesh density</li>
+            </ul>
+        </div>
+        
         <div class="student-info">
             <h2>Student Information</h2>
             <p><strong>Name:</strong> Pashchenko Mykola</p>
             <p><strong>Group:</strong> TR-51mp</p>
             <p><strong>Course:</strong> WebGL Visualization</p>
-            <p><strong>Assignment:</strong> PA#1 - Cornucopia Surface Rendering</p>
+            <p><strong>Assignment:</strong> PA#2 - Cornucopia Surface with Phong Shading</p>
+            <p><strong>Variant:</strong> 23 (Phong Shading, Facet Average Normals)</p>
         </div>
         
         <div class="footer">
