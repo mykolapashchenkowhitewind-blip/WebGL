@@ -38,9 +38,7 @@ function CornucopiaModel() {
     // Buffers for drawing the grid lines
     this.uLinesBuffer = null;
     this.vLinesBuffer = null;
-    this.uLinesCount = 0;
-    this.vLinesCount = 0;
-    
+
     /**
      * Calculate a point on the surface using the parametric equations
      */
@@ -48,7 +46,6 @@ function CornucopiaModel() {
         const ePu = Math.exp(this.p * u); // e^(pu)
         const eMu = Math.exp(this.m * u); // e^(mu)
         
-        // Use the exact formula from Fig. 2
         return {
             x: (eMu + ePu * Math.cos(v)) * Math.cos(u),
             y: (eMu + ePu * Math.cos(v)) * Math.sin(u),
