@@ -1,31 +1,231 @@
 <!DOCTYPE html>
-<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Cornucopia Surface - WebGL Visualization</title>
+    <style>
+        body {
+            background-color: #111;
+            font-family: Arial, sans-serif;
+            color: #fff;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #0f0;
+        }
+        h1 {
+            margin-top: 10px;
+            font-size: 28px;
+        }
+        h2 {
+            font-size: 22px;
+            margin-top: 25px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #canvas-holder {
+            margin: 20px auto;
+            width: 800px;
+            height: 600px;
+        }
+        canvas {
+            border: 1px solid #0f0;
+        }
+        .info-panel {
+            text-align: left;
+            background-color: rgba(0, 50, 0, 0.3);
+            border: 1px solid #0f0;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px auto;
+            max-width: 800px;
+        }
+        .math-formula {
+            background-color: rgba(0, 30, 0, 0.5);
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            font-family: "Courier New", monospace;
+        }
+        .footer {
+            margin-top: 30px;
+            font-size: 14px;
+            color: #aaa;
+            border-top: 1px solid #333;
+            padding-top: 15px;
+        }
+        .student-info {
+            text-align: left;
+            background-color: rgba(0, 40, 0, 0.3);
+            border-left: 3px solid #0f0;
+            padding: 10px 20px;
+            margin: 25px auto;
+            max-width: 600px;
+        }
+    </style>
 
-
-<title>PA#1</title>
-<style>
-    body {
-        background-color: #EEEEEE;
-    }
-</style>
-
-<script src="./Utils/trackball-rotator.js"></script>
-<script src="./Utils/m4.js"></script>
-<script src="./shader.gpu"></script>
-<script src="./main.js"></script>
-
+    <!-- Core libraries -->
+    <script src="./Utils/m4.js"></script>
+    <script src="./Utils/trackball-rotator.js"></script>
+    <script src="./shaders.js"></script>
+    <script src="./cornucopia3.js"></script>
+        
+        <script>
+            // Add event listener for the refresh button after the page loads
+            window.addEventListener('load', function() {
+                const refreshButton = document.getElementById('refresh-button');
+                const paramP = document.getElementById('param-p');
+                const paramM = document.getElementById('param-m');
+                const paramU = document.getElementById('param-u');
+                const paramV = document.getElementById('param-v');
+                
+                // Set initial values directly from the mathematical definition
+                // These values match exactly what's shown in the Mathematical Definition section
+                paramP.value = 0.15; // p = 0.15
+                paramM.value = 0.1;  // m = 0.1
+                paramU.value = 5;    // u ≤ 5π
+                paramV.value = 2;    // v ≤ 2π
+                
+                // Also ensure the model uses these exact values
+                setTimeout(function() {
+                    if (surface) {
+                        // Verify that the model parameters match the HTML definition
+                        if (surface.p != 0.15 || surface.m != 0.1 || 
+                            surface.uMax != 5 * Math.PI || surface.vMax != 2 * Math.PI) {
+                            console.log("Correcting model parameters to match Mathematical Definition");
+                            surface.p = 0.15;
+                            surface.m = 0.1;
+                            surface.uMax = 5 * Math.PI;
+                            surface.vMax = 2 * Math.PI;
+                            surface.initialize();
+                            draw();
+                        }
+                    }
+                }, 500);
+                
+                if (refreshButton) {
+                    refreshButton.addEventListener('click', function() {
+                        // Get values from inputs
+                        if (surface) {
+                            // Update parameters
+                            surface.p = parseFloat(paramP.value);
+                            surface.m = parseFloat(paramM.value);
+                            surface.uMax = parseFloat(paramU.value) * Math.PI;
+                            surface.vMax = parseFloat(paramV.value) * Math.PI;
+                            
+                            console.log("Applying new parameters:");
+                            console.log("p =", surface.p, "m =", surface.m, "uMax =", surface.uMax/Math.PI + "π", "vMax =", surface.vMax/Math.PI + "π");
+                            
+                            // Update formula display in the info panel
+                            const mathFormula = document.querySelector('.math-formula');
+                            if (mathFormula) {
+                                // Find the part after the parametric equations
+                                const whereSection = mathFormula.innerHTML.split('<strong>Where:</strong>');
+                                if (whereSection.length > 1) {
+                                    mathFormula.innerHTML = whereSection[0] + 
+                                        '<strong>Where:</strong><br>' +
+                                        '- p = ' + surface.p + ' (parameter p)<br>' +
+                                        '- m = ' + surface.m + ' (parameter m)<br>' +
+                                        '- 0 ≤ u ≤ ' + (surface.uMax/Math.PI) + 'π (lengthwise parameter)<br>' +
+                                        '- 0 ≤ v ≤ ' + (surface.vMax/Math.PI) + 'π (cross-section parameter)';
+                                }
+                            }
+                            
+                            // Reinitialize the model
+                            surface.initialize();
+                            
+                            // Redraw
+                            draw();
+                            
+                            console.log("Model updated with new parameters!");
+                            
+                            // Flash confirmation message
+                            const button = document.getElementById('refresh-button');
+                            button.textContent = "Parameters Applied!";
+                            button.style.backgroundColor = "#00ff99";
+                            setTimeout(function() {
+                                button.textContent = "Apply Parameters";
+                                button.style.backgroundColor = "#0f0";
+                            }, 1500);
+                        }
+                    });
+                }
+            });
+            
+            // No helper functions needed
+        </script>
 </head>
 <body onload="init()">
-
-<h2>A Cube with "Trackball" Mouse Rotation</h2>
-
-<p id="message">Drag your mouse on the cube to rotate it.<br>
-(On a touch screen, you can use your finger.)</p>
-
-
-<div id="canvas-holder">
-   <canvas width="600" height="600" id="webglcanvas" style="background-color:red"></canvas>
-</div>
-
-
-</body></html>
+    <div class="container">
+        <h1>Cornucopia Surface - WebGL Visualization</h1>
+        
+        <div class="info-panel">
+            <h2>Project Description</h2>
+            <p>This visualization demonstrates a 3D wireframe model of a "Cornucopia" surface rendered using WebGL.</p>
+            <p>The Cornucopia is a special case of a spiral-shaped surface "Shell without vertex". It's a cyclic surface with generatrix circles of variable radius that creates the distinctive horn-like shape.</p>
+            
+            <h2>Mathematical Definition</h2>
+            <p>The Cornucopia surface is defined by the following parametric equations:</p>
+            
+            <div class="math-formula">
+                <strong>Parametric Equations:</strong><br>
+                x(u,v) = [e<sup>mu</sup> + e<sup>pu</sup>cos(v)]cos(u)<br>
+                y(u,v) = [e<sup>mu</sup> + e<sup>pu</sup>cos(v)]sin(u)<br>
+                z(u,v) = e<sup>pu</sup>sin(v)<br><br>
+                
+                <strong>Where:</strong><br>
+                - p = 0.15 (parameter p)<br>
+                - m = 0.1 (parameter m)<br>
+                - 0 ≤ u ≤ 5π (lengthwise parameter)<br>
+                - 0 ≤ v ≤ 2π (cross-section parameter)
+            </div>
+        </div>
+        
+        <div id="canvas-holder">
+            <canvas width="800" height="600" id="webglcanvas" style="background-color:black"></canvas>
+            <div style="margin-top: 10px; text-align: center;">
+                <div style="margin-bottom: 10px; display: inline-block; background-color: rgba(0, 30, 0, 0.7); padding: 10px; border-radius: 5px; text-align: left;">
+                    <div style="margin-bottom: 8px;">
+                        <label for="param-p" style="display: inline-block; width: 80px;">p value:</label>
+                        <input type="number" id="param-p" value="0.15" step="0.01" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <label for="param-m" style="display: inline-block; width: 80px;">m value:</label>
+                        <input type="number" id="param-m" value="0.1" step="0.01" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <label for="param-u" style="display: inline-block; width: 80px;">u max (π):</label>
+                        <input type="number" id="param-u" value="5" step="0.5" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <label for="param-v" style="display: inline-block; width: 80px;">v max (π):</label>
+                        <input type="number" id="param-v" value="2" step="0.5" style="width: 80px; background-color: #111; color: #0f0; border: 1px solid #0f0; padding: 4px;">
+                    </div>
+                </div>
+                <div style="margin-top: 10px;">
+                    <button id="refresh-button" style="padding: 8px 16px; background-color: #0f0; color: black; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Apply Parameters</button>
+                </div>
+            </div>
+        </div>
+        
+        <div style="height: 180px;"></div>
+        <div class="student-info">
+            <h2>Student Information</h2>
+            <p><strong>Name:</strong> Pashchenko Mykola</p>
+            <p><strong>Group:</strong> TR-51mp</p>
+            <p><strong>Course:</strong> WebGL Visualization</p>
+            <p><strong>Assignment:</strong> PA#1 - Cornucopia Surface Rendering</p>
+        </div>
+        
+        <div class="footer">
+            <p>Interactive WebGL Visualization - Created using JavaScript and WebGL</p>
+            <p>Drag your mouse on the model to rotate it. On a touch screen, you can use your finger.</p>
+        </div>
+    </div>
+</body>
+</html>
