@@ -301,7 +301,31 @@
         <div id="canvas-holder">
             <canvas width="800" height="600" id="webglcanvas" style="background-color:white"></canvas>
         </div>
-        
+
+        <div class="controls-panel" style="margin-top: 10px; width: 800px;">
+            <h3>Texture Transformation</h3>
+            <p>Use keyboard keys to control texture transformations:</p>
+            <ul>
+                <li><strong>W/S</strong> - Move reference point up/down (v axis)</li>
+                <li><strong>A/D</strong> - Move reference point left/right (u axis)</li>
+                <li><strong>Q/E</strong> - Decrease/increase scale</li>
+                <li><strong>Z/C</strong> - Rotate counter-clockwise/clockwise</li>
+                <li><strong>R</strong> - Reset all transformations</li>
+            </ul>
+            <div class="parameter-row">
+                <span class="parameter-label">Reference Point:</span>
+                <span id="tex-ref-point-value" style="color: #0f0; font-weight: bold;">(0.50, 0.50)</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-label">Scale Factor:</span>
+                <span id="tex-scale-value" style="color: #0f0; font-weight: bold;">1.00</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-label">Rotation:</span>
+                <span id="tex-rotation-value" style="color: #0f0; font-weight: bold;">0.0°</span>
+            </div>
+        </div>
+
         <div class="controls-panel">
             <h3>Surface Parameters</h3>
             <div class="parameter-row">
@@ -320,9 +344,9 @@
                 <label class="parameter-label" for="param-v">v max (π):</label>
                 <input type="number" id="param-v" value="2" step="0.5" class="parameter-input">
             </div>
-            
+
             <button id="refresh-button" style="margin-top: 10px; padding: 8px 16px; background-color: #0f0; color: black; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Apply Parameters</button>
-            
+
             <div class="granularity-section">
                 <h3>Mesh Granularity</h3>
                 <div class="slider-container">
@@ -344,6 +368,7 @@
             <ul>
                 <li><strong>Normal Mapping:</strong> Per-pixel normal data from normal texture for enhanced surface detail</li>
                 <li><strong>Three Textures:</strong> Diffuse texture modulates diffuse lighting, specular texture modulates specular lighting, and normal texture provides per-pixel normals</li>
+                <li><strong>Texture Transformation:</strong> Scale and rotate textures around a user-specified point, controllable with keyboard (WASD to move point, QE for scaling, ZC for rotation)</li>
                 <li><strong>Gram-Schmidt Orthogonalization:</strong> Tangent space basis is constructed with priority given to the tangent vector (Variant 23)</li>
                 <li><strong>TBN Matrix:</strong> Tangent, Bitangent, and Normal vectors transform normals from tangent space to view space</li>
                 <li><strong>Phong Shading:</strong> Realistic lighting with ambient, diffuse, and specular components</li>

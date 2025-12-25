@@ -25,6 +25,12 @@ let lightRadius = 20;   // Distance of light from origin (moved even closer to t
 let meshUpdateNeeded = false;  // Flag to indicate if the mesh needs to be updated
 let lastTime = 0;       // Last frame timestamp for constant movement
 
+// Texture transformation variables
+let texReferencePoint = [0.5, 0.5]; // Reference point for texture transformations (u, v)
+let texScaleFactor = 1.0;           // Texture scaling factor
+let texRotationAngle = 0.0;         // Texture rotation angle in radians
+let texMoveSpeed = 0.01;            // Speed for moving reference point
+
 /**
  * CornucopiaModel class to create and render the surface
  */
@@ -747,6 +753,10 @@ function ShaderProgram(name, program) {
     this.iTextureDiffuse = -1;
     this.iTextureSpecular = -1;
     this.iTextureNormal = -1;
+    // Texture transformation uniforms
+    this.iTexReferencePoint = -1;
+    this.iTexScaleFactor = -1;
+    this.iTexRotationAngle = -1;
     
     this.use = function() {
         gl.useProgram(this.prog);
@@ -874,6 +884,11 @@ function draw(timestamp) {
     gl.uniform3fv(shProgram.iLightPosition, lightPosition);
     gl.uniform3fv(shProgram.iLightColor, [1.0, 1.0, 1.0]); // Pure white light
     
+    // Pass texture transformation uniforms
+    gl.uniform2fv(shProgram.iTexReferencePoint, texReferencePoint);
+    gl.uniform1f(shProgram.iTexScaleFactor, texScaleFactor);
+    gl.uniform1f(shProgram.iTexRotationAngle, texRotationAngle);
+    
     // Draw the surface model
     surface.draw(shProgram);
     
@@ -912,9 +927,47 @@ function updateMeshFromSliders() {
  * Create shader program
  */
 function createProgram(gl, vertexShaderSource, fragmentShaderSource) {
+    // Determine the variant number
+    // Extract student variant number from the HTML (student info section)
+    let variantNumber = 23; // Default to 23
+    
+    try {
+        // Find all strong elements in the student info section
+        const studentInfo = document.querySelector(".student-info");
+        if (studentInfo) {
+            const strongElements = studentInfo.querySelectorAll("strong");
+            
+            // Find the one that contains "Variant"
+            for (let i = 0; i < strongElements.length; i++) {
+                if (strongElements[i].textContent.includes("Variant")) {
+                    // Extract the variant number using regex
+                    const variantText = strongElements[i].parentElement.textContent;
+                    const match = variantText.match(/Variant.*?(\d+)/);
+                    if (match && match[1]) {
+                        variantNumber = parseInt(match[1]);
+                        console.log("Detected variant number:", variantNumber);
+                        break;
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Could not automatically detect variant number, using default:", variantNumber);
+    }
+    
+    // Check if we should use rotation (even variant) or scaling (odd variant)
+    const useRotation = variantNumber % 2 === 0;
+    console.log("Using " + (useRotation ? "ROTATION" : "SCALING") + " for texture transformation (variant " + variantNumber + ")");
+    
+    // Modify the shader source to include the appropriate #define
+    let modifiedVertexSource = vertexShaderSource;
+    if (useRotation) {
+        modifiedVertexSource = "#define ENABLE_ROTATION\n" + vertexShaderSource;
+    }
+    
     // Create and compile vertex shader
     let vsh = gl.createShader(gl.VERTEX_SHADER);
-    gl.shaderSource(vsh, vertexShaderSource);
+    gl.shaderSource(vsh, modifiedVertexSource);
     gl.compileShader(vsh);
     if (!gl.getShaderParameter(vsh, gl.COMPILE_STATUS)) {
         throw new Error("Error in vertex shader: " + gl.getShaderInfoLog(vsh));
@@ -969,6 +1022,10 @@ function initGL() {
     shProgram.iTextureDiffuse = gl.getUniformLocation(prog, "textureDiffuse");
     shProgram.iTextureSpecular = gl.getUniformLocation(prog, "textureSpecular");
     shProgram.iTextureNormal = gl.getUniformLocation(prog, "textureNormal");
+    // Get texture transformation uniforms
+    shProgram.iTexReferencePoint = gl.getUniformLocation(prog, "texReferencePoint");
+    shProgram.iTexScaleFactor = gl.getUniformLocation(prog, "texScaleFactor");
+    shProgram.iTexRotationAngle = gl.getUniformLocation(prog, "texRotationAngle");
     
     // Create surface model
     surface = new CornucopiaModel();
@@ -1102,6 +1159,99 @@ function setupControls() {
 }
 
 /**
+ * Keyboard event handler for texture transformation controls
+ */
+function setupKeyboardControls() {
+    document.addEventListener('keydown', function(event) {
+        let needRedraw = true;
+        
+        switch(event.key) {
+            // Reference point movement
+            case 'a': case 'A': // Move reference point left (u-)
+                texReferencePoint[0] -= texMoveSpeed;
+                break;
+                
+            case 'd': case 'D': // Move reference point right (u+)
+                texReferencePoint[0] += texMoveSpeed;
+                break;
+                
+            case 'w': case 'W': // Move reference point up (v-)
+                texReferencePoint[1] -= texMoveSpeed;
+                break;
+                
+            case 's': case 'S': // Move reference point down (v+)
+                texReferencePoint[1] += texMoveSpeed;
+                break;
+                
+            // Scaling controls
+            case 'q': case 'Q': // Decrease scale
+                texScaleFactor = Math.max(0.1, texScaleFactor - 0.05);
+                break;
+                
+            case 'e': case 'E': // Increase scale
+                texScaleFactor += 0.05;
+                break;
+                
+            // Rotation controls
+            case 'z': case 'Z': // Rotate counter-clockwise
+                texRotationAngle -= 0.05;
+                break;
+                
+            case 'c': case 'C': // Rotate clockwise
+                texRotationAngle += 0.05;
+                break;
+                
+            // Reset
+            case 'r': case 'R': // Reset transformations
+                texReferencePoint = [0.5, 0.5];
+                texScaleFactor = 1.0;
+                texRotationAngle = 0.0;
+                break;
+                
+            default:
+                needRedraw = false;
+                break;
+        }
+        
+        // Ensure reference point stays in reasonable bounds
+        texReferencePoint[0] = Math.max(0.0, Math.min(1.0, texReferencePoint[0]));
+        texReferencePoint[1] = Math.max(0.0, Math.min(1.0, texReferencePoint[1]));
+        
+        // Update UI to display current values
+        updateTextureControlsDisplay();
+        
+        if (needRedraw) {
+            // Redraw the scene with updated values
+            requestAnimationFrame(draw);
+        }
+    });
+}
+
+/**
+ * Update the display of texture control values
+ */
+function updateTextureControlsDisplay() {
+    // Update UI elements showing current texture control values
+    const refPointElem = document.getElementById('tex-ref-point-value');
+    const scaleElem = document.getElementById('tex-scale-value');
+    const rotationElem = document.getElementById('tex-rotation-value');
+    
+    if (refPointElem) {
+        refPointElem.textContent = `(${texReferencePoint[0].toFixed(2)}, ${texReferencePoint[1].toFixed(2)})`;
+    }
+    
+    if (scaleElem) {
+        scaleElem.textContent = texScaleFactor.toFixed(2);
+    }
+    
+    if (rotationElem) {
+        // Convert to degrees for display
+        const degrees = (texRotationAngle * 180 / Math.PI).toFixed(1);
+        rotationElem.textContent = `${degrees}°`;
+    }
+}
+
+/**
  * Main initialization function
  */
 function init() {
@@ -1123,6 +1273,9 @@ function init() {
         
         // Set up UI controls after GL is initialized
         setupControls();
+        
+        // Set up keyboard controls for texture transformations
+        setupKeyboardControls();
         
         // Initial drawing of the scene
         draw();

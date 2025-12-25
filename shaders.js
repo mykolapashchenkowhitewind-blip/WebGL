@@ -13,12 +13,47 @@ uniform mat4 ModelViewMatrix;
 uniform mat3 NormalMatrix; // For transforming normals
 uniform vec3 lightPosition; // In world space
 
+// Texture transformation uniforms
+uniform vec2 texReferencePoint; // Reference point for transformations (u,v)
+uniform float texScaleFactor;   // Scale factor 
+uniform float texRotationAngle; // Rotation angle in radians
+
 varying vec3 fragNormal;
 varying vec3 fragTangent;
 varying vec3 fragBitangent;
 varying vec3 fragPosition;
 varying vec3 fragLightPosition;
 varying vec2 fragTexCoord;
+
+// Function to transform texture coordinates based on scaling/rotation
+vec2 transformTexCoords(vec2 texCoords, vec2 refPoint, float scale, float angle) {
+    // Translate to reference point origin
+    vec2 centered = texCoords - refPoint;
+    
+    // Apply scale and rotation
+    float s = sin(angle);
+    float c = cos(angle);
+    
+    // Create rotation matrix
+    mat2 rotation = mat2(
+        c, -s,
+        s, c
+    );
+    
+    // Apply scale and rotation
+    vec2 transformed;
+    
+    #ifdef ENABLE_ROTATION
+        // Apply rotation around reference point
+        transformed = rotation * centered;
+    #else
+        // Apply scaling around reference point
+        transformed = centered * scale;
+    #endif
+    
+    // Translate back from reference point
+    return transformed + refPoint;
+}
 
 void main() {
     // Transform vertex to clip space
@@ -38,8 +73,8 @@ void main() {
     // Pass light position to fragment shader
     fragLightPosition = vec3(ModelViewMatrix * vec4(lightPosition, 1.0));
     
-    // Pass texture coordinates to fragment shader
-    fragTexCoord = texCoord;
+    // Apply texture transformation and pass texture coordinates to fragment shader
+    fragTexCoord = transformTexCoords(texCoord, texReferencePoint, texScaleFactor, texRotationAngle);
 }`;
 
 // Fragment shader for Phong lighting with normal mapping
