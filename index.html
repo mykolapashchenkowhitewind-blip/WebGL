@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>Cornucopia Surface - WebGL Visualization with Phong Shading</title>
+    <title>Cornucopia Surface - WebGL Visualization with Normal Mapping</title>
     <style>
         body {
             background-color: #111;
@@ -158,7 +158,8 @@
     <script src="./Utils/trackball-rotator.js"></script>
     <script src="./shaders.js"></script>
     <script src="./cornucopia3.js"></script>
-        
+    <!-- TextureHandler.js not needed - LoadTexture is defined in cornucopia3.js -->
+
     <script>
         // Add event listener for the refresh button after the page loads
         window.addEventListener('load', function() {
@@ -273,11 +274,11 @@
 </head>
 <body onload="init()">
     <div class="container">
-        <h1>Cornucopia Surface - WebGL Visualization with Phong Shading</h1>
+        <h1>Cornucopia Surface - WebGL Visualization with Normal Mapping</h1>
         
         <div class="info-panel">
             <h2>Project Description</h2>
-            <p>This visualization demonstrates a 3D model of a "Cornucopia" surface rendered using WebGL with Phong shading and Facet Average normal calculation.</p>
+            <p>This visualization demonstrates a 3D model of a "Cornucopia" surface rendered using WebGL with normal mapping, three textures (diffuse, specular, and normal), and Gram-Schmidt orthogonalization prioritizing the tangent (Variant 23).</p>
             <p>The Cornucopia is a special case of a spiral-shaped surface "Shell without vertex". It's a cyclic surface with generatrix circles of variable radius that creates the distinctive horn-like shape.</p>
             
             <h2>Mathematical Definition</h2>
@@ -341,8 +342,11 @@
             <h2>Implementation Details</h2>
             <p>This implementation includes:</p>
             <ul>
+                <li><strong>Normal Mapping:</strong> Per-pixel normal data from normal texture for enhanced surface detail</li>
+                <li><strong>Three Textures:</strong> Diffuse texture modulates diffuse lighting, specular texture modulates specular lighting, and normal texture provides per-pixel normals</li>
+                <li><strong>Gram-Schmidt Orthogonalization:</strong> Tangent space basis is constructed with priority given to the tangent vector (Variant 23)</li>
+                <li><strong>TBN Matrix:</strong> Tangent, Bitangent, and Normal vectors transform normals from tangent space to view space</li>
                 <li><strong>Phong Shading:</strong> Realistic lighting with ambient, diffuse, and specular components</li>
-                <li><strong>Facet Average Normal:</strong> Normals are calculated by averaging adjacent facet normals</li>
                 <li><strong>Rotating Light Source:</strong> A moving light that circles around the model</li>
                 <li><strong>Triangle Mesh:</strong> The surface is rendered with filled triangles using VBO with indices</li>
                 <li><strong>Adjustable Granularity:</strong> U and V segment sliders allow controlling the mesh density</li>
@@ -354,8 +358,8 @@
             <p><strong>Name:</strong> Pashchenko Mykola</p>
             <p><strong>Group:</strong> TR-51mp</p>
             <p><strong>Course:</strong> WebGL Visualization</p>
-            <p><strong>Assignment:</strong> PA#2 - Cornucopia Surface with Phong Shading</p>
-            <p><strong>Variant:</strong> 23 (Phong Shading, Facet Average Normals)</p>
+            <p><strong>Assignment:</strong> PA#3 - Normal Mapping with Three Textures</p>
+            <p><strong>Variant:</strong> 23 (Prioritize Tangent in Gram-Schmidt Orthogonalization)</p>
         </div>
         
         <div class="footer">

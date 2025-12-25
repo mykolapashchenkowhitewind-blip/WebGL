@@ -1,17 +1,24 @@
 'use strict';
 
-// Vertex shader for Phong shading
+// Vertex shader for Phong shading with normal mapping
 const vertexShaderSource = `
 attribute vec3 vertex;
 attribute vec3 normal;
+attribute vec3 tangent;
+attribute vec3 bitangent;
+attribute vec2 texCoord;
+
 uniform mat4 ModelViewProjectionMatrix;
 uniform mat4 ModelViewMatrix;
 uniform mat3 NormalMatrix; // For transforming normals
 uniform vec3 lightPosition; // In world space
 
 varying vec3 fragNormal;
+varying vec3 fragTangent;
+varying vec3 fragBitangent;
 varying vec3 fragPosition;
 varying vec3 fragLightPosition;
+varying vec2 fragTexCoord;
 
 void main() {
     // Transform vertex to clip space
@@ -19,16 +26,23 @@ void main() {
     
     // Pass transformed normal to fragment shader
     // IMPORTANT: Invert the normal direction to fix shadow orientation
-    fragNormal = NormalMatrix * (-normal);
+    fragNormal = normalize(NormalMatrix * (-normal));
+    
+    // Transform tangent and bitangent to view space
+    fragTangent = normalize(NormalMatrix * tangent);
+    fragBitangent = normalize(NormalMatrix * bitangent);
     
     // Pass vertex position in view space for lighting calculations
     fragPosition = vec3(ModelViewMatrix * vec4(vertex, 1.0));
     
     // Pass light position to fragment shader
     fragLightPosition = vec3(ModelViewMatrix * vec4(lightPosition, 1.0));
+    
+    // Pass texture coordinates to fragment shader
+    fragTexCoord = texCoord;
 }`;
 
-// Fragment shader for Phong lighting
+// Fragment shader for Phong lighting with normal mapping
 const fragmentShaderSource = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
    precision highp float;
@@ -37,8 +51,11 @@ const fragmentShaderSource = `
 #endif
 
 varying vec3 fragNormal;
+varying vec3 fragTangent;
+varying vec3 fragBitangent;
 varying vec3 fragPosition;
 varying vec3 fragLightPosition;
+varying vec2 fragTexCoord;
 
 // Material properties
 uniform vec3 materialAmbient;
@@ -49,10 +66,35 @@ uniform float shininess;
 // Light properties
 uniform vec3 lightColor; // Light color
 
+// Texture samplers
+uniform sampler2D textureDiffuse;
+uniform sampler2D textureSpecular;
+uniform sampler2D textureNormal;
+
 void main() {
-    // Normalize vectors (required for correct lighting)
-    // Ensure normal is correctly oriented (pointing outward from the surface)
-    vec3 normal = normalize(fragNormal);
+    // Sample textures
+    vec4 diffuseColor = texture2D(textureDiffuse, fragTexCoord);
+    
+    // The roughness map is the inverse of specularity
+    // Convert from roughness to specular by inverting: specular = 1.0 - roughness
+    vec4 roughnessColor = texture2D(textureSpecular, fragTexCoord);
+    vec4 specularColor = vec4(vec3(1.0 - roughnessColor.r), 1.0);
+    
+    vec3 normalMapColor = texture2D(textureNormal, fragTexCoord).rgb;
+    
+    // Convert normal map from [0, 1] to [-1, 1] range
+    vec3 normalTangentSpace = normalMapColor * 2.0 - 1.0;
+    
+    // Construct TBN matrix (Tangent, Bitangent, Normal) for transforming normal from tangent space to view space
+    // This matrix transforms vectors from tangent space to view space
+    mat3 TBN = mat3(
+        normalize(fragTangent),
+        normalize(fragBitangent),
+        normalize(fragNormal)
+    );
+    
+    // Transform normal from tangent space to view space
+    vec3 normal = normalize(TBN * normalTangentSpace);
     
     // Calculate vector from fragment to light
     vec3 lightDir = normalize(fragLightPosition - fragPosition);
@@ -62,7 +104,8 @@ void main() {
     vec3 viewDir = normalize(vec3(0.0, 0.0, 1.0));
     
     // Calculate ambient component (controlled ambient for better shadows)
-    vec3 ambient = materialAmbient;
+    // Modulated by diffuse texture
+    vec3 ambient = materialAmbient * diffuseColor.rgb;
     
     // Calculate diffuse component with light color
     // The dot product determines how directly the light hits the surface
@@ -77,13 +120,15 @@ void main() {
     // Higher exponent (2.0) creates a much sharper transition between light and shadow
     diffuseFactor = pow(diffuseFactor, 2.0); 
     
-    // Calculate final diffuse color
-    vec3 diffuse = materialDiffuse * lightColor * diffuseFactor;
+    // Calculate final diffuse color - modulated by diffuse texture
+    vec3 diffuse = materialDiffuse * lightColor * diffuseFactor * diffuseColor.rgb;
     
     // Calculate specular component (Phong reflection model) with light color
     vec3 reflectDir = reflect(-lightDir, normal);
     float specularFactor = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
-    vec3 specular = materialSpecular * lightColor * specularFactor;
+    
+    // Modulate specular by specular texture
+    vec3 specular = materialSpecular * lightColor * specularFactor * specularColor.rgb;
     
     // Combine all lighting components
     vec3 finalColor = ambient + diffuse + specular;

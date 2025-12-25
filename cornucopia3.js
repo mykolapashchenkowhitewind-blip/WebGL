@@ -210,6 +210,9 @@ function CornucopiaModel() {
     // Buffers for the triangular mesh
     this.vertexBuffer = null;
     this.normalBuffer = null;
+    this.tangentBuffer = null;
+    this.bitangentBuffer = null;
+    this.texCoordBuffer = null;
     this.indexBuffer = null;
     this.numVertices = 0;
     this.numIndices = 0;
@@ -217,7 +220,15 @@ function CornucopiaModel() {
     // Array to store vertex positions for normal calculation
     this.vertices = [];
     this.normals = [];
+    this.tangents = [];
+    this.bitangents = [];
+    this.texCoords = [];
     this.indices = [];
+    
+    // Texture IDs
+    this.textureDiffuse = null;
+    this.textureSpecular = null;
+    this.textureNormal = null;
     
     /**
      * Calculate a point on the surface using the parametric equations
@@ -275,6 +286,7 @@ function CornucopiaModel() {
         
         this.vertices = [];
         this.normals = [];
+        this.texCoords = [];
         this.indices = [];
         
         // Generate vertices
@@ -291,6 +303,12 @@ function CornucopiaModel() {
                 // Calculate analytical normal for now (will be replaced with facet average)
                 const normal = this.computeAnalyticalNormal(u, v);
                 this.normals.push(normal.x, normal.y, normal.z);
+                
+                // Generate texture coordinates (map u and v parameters to [0, 1] with repeating)
+                // Multiply by a factor to repeat the texture multiple times along the surface
+                const texU = (uIndex / this.uSegments) * 4.0; // Repeat 4 times along u
+                const texV = (vIndex / this.vSegments) * 2.0; // Repeat 2 times along v
+                this.texCoords.push(texU, texV);
             }
         }
         
@@ -434,6 +452,152 @@ function CornucopiaModel() {
     };
     
     /**
+     * Calculate tangent and bitangent vectors using Gram-Schmidt orthogonalization
+     * Variant 23: Prioritize tangent
+     */
+    this.calculateTangentsAndBitangents = function() {
+        // Initialize arrays
+        this.tangents = new Array(this.numVertices * 3).fill(0);
+        this.bitangents = new Array(this.numVertices * 3).fill(0);
+        
+        // Temporary arrays to accumulate tangent/bitangent contributions from triangles
+        const tan1 = new Array(this.numVertices * 3).fill(0);
+        const tan2 = new Array(this.numVertices * 3).fill(0);
+        
+        // Calculate tangent and bitangent for each triangle
+        for (let i = 0; i < this.numIndices; i += 3) {
+            const i1 = this.indices[i];
+            const i2 = this.indices[i + 1];
+            const i3 = this.indices[i + 2];
+            
+            // Get vertex positions
+            const v1 = [this.vertices[i1 * 3], this.vertices[i1 * 3 + 1], this.vertices[i1 * 3 + 2]];
+            const v2 = [this.vertices[i2 * 3], this.vertices[i2 * 3 + 1], this.vertices[i2 * 3 + 2]];
+            const v3 = [this.vertices[i3 * 3], this.vertices[i3 * 3 + 1], this.vertices[i3 * 3 + 2]];
+            
+            // Get texture coordinates
+            const w1 = [this.texCoords[i1 * 2], this.texCoords[i1 * 2 + 1]];
+            const w2 = [this.texCoords[i2 * 2], this.texCoords[i2 * 2 + 1]];
+            const w3 = [this.texCoords[i3 * 2], this.texCoords[i3 * 2 + 1]];
+            
+            // Calculate edge vectors in 3D space
+            const x1 = v2[0] - v1[0];
+            const x2 = v3[0] - v1[0];
+            const y1 = v2[1] - v1[1];
+            const y2 = v3[1] - v1[1];
+            const z1 = v2[2] - v1[2];
+            const z2 = v3[2] - v1[2];
+            
+            // Calculate edge vectors in texture space
+            const s1 = w2[0] - w1[0];
+            const s2 = w3[0] - w1[0];
+            const t1 = w2[1] - w1[1];
+            const t2 = w3[1] - w1[1];
+            
+            // Calculate tangent and bitangent using the formula
+            const r = 1.0 / (s1 * t2 - s2 * t1);
+            const sdir = [
+                (t2 * x1 - t1 * x2) * r,
+                (t2 * y1 - t1 * y2) * r,
+                (t2 * z1 - t1 * z2) * r
+            ];
+            const tdir = [
+                (s1 * x2 - s2 * x1) * r,
+                (s1 * y2 - s2 * y1) * r,
+                (s1 * z2 - s2 * z1) * r
+            ];
+            
+            // Accumulate tangent and bitangent for each vertex of the triangle
+            for (const idx of [i1, i2, i3]) {
+                tan1[idx * 3] += sdir[0];
+                tan1[idx * 3 + 1] += sdir[1];
+                tan1[idx * 3 + 2] += sdir[2];
+                
+                tan2[idx * 3] += tdir[0];
+                tan2[idx * 3 + 1] += tdir[1];
+                tan2[idx * 3 + 2] += tdir[2];
+            }
+        }
+        
+        // Gram-Schmidt orthogonalization for each vertex (prioritizing tangent - variant 23)
+        for (let i = 0; i < this.numVertices; i++) {
+            const n = [
+                this.normals[i * 3],
+                this.normals[i * 3 + 1],
+                this.normals[i * 3 + 2]
+            ];
+            
+            const t = [
+                tan1[i * 3],
+                tan1[i * 3 + 1],
+                tan1[i * 3 + 2]
+            ];
+            
+            const b = [
+                tan2[i * 3],
+                tan2[i * 3 + 1],
+                tan2[i * 3 + 2]
+            ];
+            
+            // Variant 23: Prioritize tangent
+            // Step 1: Normalize the tangent
+            let tLen = Math.sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+            if (tLen > 0) {
+                t[0] /= tLen;
+                t[1] /= tLen;
+                t[2] /= tLen;
+            }
+            
+            // Step 2: Orthogonalize normal with respect to tangent
+            // n' = n - (n · t) * t
+            const nDotT = n[0] * t[0] + n[1] * t[1] + n[2] * t[2];
+            const nPrime = [
+                n[0] - nDotT * t[0],
+                n[1] - nDotT * t[1],
+                n[2] - nDotT * t[2]
+            ];
+            
+            // Normalize the orthogonalized normal
+            let nPrimeLen = Math.sqrt(nPrime[0] * nPrime[0] + nPrime[1] * nPrime[1] + nPrime[2] * nPrime[2]);
+            if (nPrimeLen > 0) {
+                nPrime[0] /= nPrimeLen;
+                nPrime[1] /= nPrimeLen;
+                nPrime[2] /= nPrimeLen;
+            }
+            
+            // Update the normal (we keep the orthogonalized version)
+            this.normals[i * 3] = nPrime[0];
+            this.normals[i * 3 + 1] = nPrime[1];
+            this.normals[i * 3 + 2] = nPrime[2];
+            
+            // Step 3: Calculate bitangent as cross product of normal and tangent
+            // This ensures all three vectors are orthogonal
+            const bPrime = [
+                nPrime[1] * t[2] - nPrime[2] * t[1],
+                nPrime[2] * t[0] - nPrime[0] * t[2],
+                nPrime[0] * t[1] - nPrime[1] * t[0]
+            ];
+            
+            // Normalize bitangent
+            let bPrimeLen = Math.sqrt(bPrime[0] * bPrime[0] + bPrime[1] * bPrime[1] + bPrime[2] * bPrime[2]);
+            if (bPrimeLen > 0) {
+                bPrime[0] /= bPrimeLen;
+                bPrime[1] /= bPrimeLen;
+                bPrime[2] /= bPrimeLen;
+            }
+            
+            // Store the orthogonalized tangent and bitangent
+            this.tangents[i * 3] = t[0];
+            this.tangents[i * 3 + 1] = t[1];
+            this.tangents[i * 3 + 2] = t[2];
+            
+            this.bitangents[i * 3] = bPrime[0];
+            this.bitangents[i * 3 + 1] = bPrime[1];
+            this.bitangents[i * 3 + 2] = bPrime[2];
+        }
+    };
+    
+    /**
      * Initialize the model by generating the mesh and setting up buffers
      */
     this.initialize = function() {
@@ -448,6 +612,9 @@ function CornucopiaModel() {
         // Calculate facet average normals
         this.calculateFacetAverageNormals();
         
+        // Calculate tangents and bitangents with Gram-Schmidt orthogonalization (prioritizing tangent)
+        this.calculateTangentsAndBitangents();
+        
         // Create and populate the vertex buffer
         if (this.vertexBuffer) gl.deleteBuffer(this.vertexBuffer);
         this.vertexBuffer = gl.createBuffer();
@@ -459,6 +626,24 @@ function CornucopiaModel() {
         this.normalBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.normals), gl.STATIC_DRAW);
+        
+        // Create and populate the tangent buffer
+        if (this.tangentBuffer) gl.deleteBuffer(this.tangentBuffer);
+        this.tangentBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.tangentBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.tangents), gl.STATIC_DRAW);
+        
+        // Create and populate the bitangent buffer
+        if (this.bitangentBuffer) gl.deleteBuffer(this.bitangentBuffer);
+        this.bitangentBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.bitangentBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.bitangents), gl.STATIC_DRAW);
+        
+        // Create and populate the texture coordinate buffer
+        if (this.texCoordBuffer) gl.deleteBuffer(this.texCoordBuffer);
+        this.texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.texCoords), gl.STATIC_DRAW);
         
         // Create and populate the index buffer
         if (this.indexBuffer) gl.deleteBuffer(this.indexBuffer);
@@ -491,6 +676,40 @@ function CornucopiaModel() {
         gl.vertexAttribPointer(shaderProgram.iAttribNormal, 3, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(shaderProgram.iAttribNormal);
         
+        // Bind tangent buffer and set attribute pointer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.tangentBuffer);
+        gl.vertexAttribPointer(shaderProgram.iAttribTangent, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shaderProgram.iAttribTangent);
+        
+        // Bind bitangent buffer and set attribute pointer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.bitangentBuffer);
+        gl.vertexAttribPointer(shaderProgram.iAttribBitangent, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shaderProgram.iAttribBitangent);
+        
+        // Bind texture coordinate buffer and set attribute pointer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
+        gl.vertexAttribPointer(shaderProgram.iAttribTexCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shaderProgram.iAttribTexCoord);
+        
+        // Bind textures
+        if (this.textureDiffuse) {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.textureDiffuse);
+            gl.uniform1i(shaderProgram.iTextureDiffuse, 0);
+        }
+        
+        if (this.textureSpecular) {
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, this.textureSpecular);
+            gl.uniform1i(shaderProgram.iTextureSpecular, 1);
+        }
+        
+        if (this.textureNormal) {
+            gl.activeTexture(gl.TEXTURE2);
+            gl.bindTexture(gl.TEXTURE_2D, this.textureNormal);
+            gl.uniform1i(shaderProgram.iTextureNormal, 2);
+        }
+        
         // Bind index buffer
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
         
@@ -513,6 +732,9 @@ function ShaderProgram(name, program) {
     this.prog = program;
     this.iAttribVertex = -1;
     this.iAttribNormal = -1;
+    this.iAttribTangent = -1;
+    this.iAttribBitangent = -1;
+    this.iAttribTexCoord = -1;
     this.iModelViewProjectionMatrix = -1;
     this.iModelViewMatrix = -1;
     this.iNormalMatrix = -1;
@@ -522,6 +744,9 @@ function ShaderProgram(name, program) {
     this.iMaterialDiffuse = -1;
     this.iMaterialSpecular = -1;
     this.iShininess = -1;
+    this.iTextureDiffuse = -1;
+    this.iTextureSpecular = -1;
+    this.iTextureNormal = -1;
     
     this.use = function() {
         gl.useProgram(this.prog);
@@ -729,6 +954,9 @@ function initGL() {
     // Get attribute and uniform locations
     shProgram.iAttribVertex = gl.getAttribLocation(prog, "vertex");
     shProgram.iAttribNormal = gl.getAttribLocation(prog, "normal");
+    shProgram.iAttribTangent = gl.getAttribLocation(prog, "tangent");
+    shProgram.iAttribBitangent = gl.getAttribLocation(prog, "bitangent");
+    shProgram.iAttribTexCoord = gl.getAttribLocation(prog, "texCoord");
     shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
     shProgram.iModelViewMatrix = gl.getUniformLocation(prog, "ModelViewMatrix");
     shProgram.iNormalMatrix = gl.getUniformLocation(prog, "NormalMatrix");
@@ -738,10 +966,18 @@ function initGL() {
     shProgram.iMaterialDiffuse = gl.getUniformLocation(prog, "materialDiffuse");
     shProgram.iMaterialSpecular = gl.getUniformLocation(prog, "materialSpecular");
     shProgram.iShininess = gl.getUniformLocation(prog, "shininess");
+    shProgram.iTextureDiffuse = gl.getUniformLocation(prog, "textureDiffuse");
+    shProgram.iTextureSpecular = gl.getUniformLocation(prog, "textureSpecular");
+    shProgram.iTextureNormal = gl.getUniformLocation(prog, "textureNormal");
     
     // Create surface model
     surface = new CornucopiaModel();
     surface.initialize();
+    
+    // Load textures from the res folder
+    surface.textureDiffuse = LoadTexture("./res/Ground080_1K-JPG_Color.jpg");
+    surface.textureSpecular = LoadTexture("./res/Ground080_1K-JPG_Roughness.jpg");
+    surface.textureNormal = LoadTexture("./res/Ground080_1K-JPG_NormalGL.jpg");
     
     // Create light source model
     lightSource = new LightSourceModel();
@@ -749,6 +985,82 @@ function initGL() {
     
     // Enable depth testing
     gl.enable(gl.DEPTH_TEST);
+}
+
+/**
+ * Load a texture from a URL
+ */
+function LoadTexture(url) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    
+    // Fill with a placeholder color while loading
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                  new Uint8Array([128, 128, 255, 255])); // Light blue default
+    
+    // Load the image
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.src = url;
+    image.addEventListener('load', function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        
+        // Set texture parameters
+        if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+            gl.generateMipmap(gl.TEXTURE_2D);
+            // Use REPEAT for wrapping (better for tiled textures)
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        } else {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+        
+        // Redraw the scene
+        draw();
+    });
+    
+    return texture;
+}
+
+/**
+ * Create a flat normal map texture (pointing straight up in tangent space)
+ * This is useful as a default when no normal map is available
+ */
+function CreateFlatNormalMap(size) {
+    size = size || 64; // Default 64x64 texture
+    
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    
+    // Create a flat normal map where all normals point straight up (0, 0, 1) in tangent space
+    // In RGB this is (0.5, 0.5, 1.0) which maps to (128, 128, 255) in byte values
+    const data = new Uint8Array(size * size * 4);
+    for (let i = 0; i < size * size; i++) {
+        data[i * 4 + 0] = 128; // R = 0.5 (X component)
+        data[i * 4 + 1] = 128; // G = 0.5 (Y component)
+        data[i * 4 + 2] = 255; // B = 1.0 (Z component, pointing up)
+        data[i * 4 + 3] = 255; // A = 1.0 (full opacity)
+    }
+    
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    
+    // Set texture parameters
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    
+    return texture;
+}
+
+/**
+ * Check if a value is a power of 2
+ */
+function isPowerOf2(value) {
+    return (value & (value - 1)) === 0;
 }
 
 /**
