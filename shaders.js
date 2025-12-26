@@ -43,12 +43,15 @@ vec2 transformTexCoords(vec2 texCoords, vec2 refPoint, float scale, float angle)
     // Apply scale and rotation
     vec2 transformed;
     
+    // First apply scaling around reference point
+    vec2 scaled = centered * scale;
+    
     #ifdef ENABLE_ROTATION
-        // Apply rotation around reference point
-        transformed = rotation * centered;
+        // Then apply rotation around reference point if rotation is enabled
+        transformed = rotation * scaled;
     #else
-        // Apply scaling around reference point
-        transformed = centered * scale;
+        // Otherwise just use the scaled coordinates
+        transformed = scaled;
     #endif
     
     // Translate back from reference point

@@ -17,6 +17,7 @@
 let gl;                 // WebGL context
 let surface;            // Cornucopia surface model
 let lightSource;        // Light source object
+let uvMarker;           // UV reference point marker
 let shProgram;          // Shader program
 let spaceball;          // Trackball rotator
 let lightAngle = 0;     // Angle for rotating light
@@ -34,6 +35,179 @@ let texMoveSpeed = 0.01;            // Speed for moving reference point
 /**
  * CornucopiaModel class to create and render the surface
  */
+/**
+ * UVMarker class for creating a visible marker at UV coordinates
+ */
+function UVMarker() {
+    this.vertexBuffer = null;
+    this.indexBuffer = null;
+    this.normalBuffer = null;
+    this.vertices = [];
+    this.indices = [];
+    this.normals = [];
+    this.numVertices = 0;
+    this.numIndices = 0;
+    this.position = [0, 0, 0]; // Current position of the marker
+    this.radius = 0.5; // Size of the marker sphere (increased as requested)
+    this.uvCoords = [0.5, 0.5]; // Default UV coordinates
+    
+    /**
+     * Generate a sphere mesh for the marker
+     */
+    this.generateSphere = function() {
+        // Sphere parameters (simpler than light source)
+        const segments = 10;
+        const rings = 10;
+        
+        this.vertices = [];
+        this.indices = [];
+        this.normals = [];
+        
+        // Generate vertices
+        for (let ring = 0; ring <= rings; ring++) {
+            const theta = ring * Math.PI / rings;
+            const sinTheta = Math.sin(theta);
+            const cosTheta = Math.cos(theta);
+            
+            for (let segment = 0; segment <= segments; segment++) {
+                const phi = segment * 2 * Math.PI / segments;
+                const sinPhi = Math.sin(phi);
+                const cosPhi = Math.cos(phi);
+                
+                // Vertex position
+                const x = this.radius * cosPhi * sinTheta;
+                const y = this.radius * sinPhi * sinTheta;
+                const z = this.radius * cosTheta;
+                
+                // Add vertex to the array
+                this.vertices.push(x, y, z);
+                
+                // Normal vector
+                this.normals.push(cosPhi * sinTheta, sinPhi * sinTheta, cosTheta);
+            }
+        }
+        
+        // Generate indices for triangle strips
+        for (let ring = 0; ring < rings; ring++) {
+            const ringStart = ring * (segments + 1);
+            const nextRingStart = (ring + 1) * (segments + 1);
+            
+            for (let segment = 0; segment < segments; segment++) {
+                // Triangle 1
+                this.indices.push(ringStart + segment);
+                this.indices.push(nextRingStart + segment);
+                this.indices.push(ringStart + segment + 1);
+                
+                // Triangle 2
+                this.indices.push(ringStart + segment + 1);
+                this.indices.push(nextRingStart + segment);
+                this.indices.push(nextRingStart + segment + 1);
+            }
+        }
+        
+        this.numVertices = this.vertices.length / 3;
+        this.numIndices = this.indices.length;
+    };
+    
+    /**
+     * Initialize the UV marker
+     */
+    this.initialize = function() {
+        // Generate the marker sphere
+        this.generateSphere();
+        
+        // Create and populate the vertex buffer
+        this.vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertices), gl.STATIC_DRAW);
+        
+        // Create and populate the normal buffer
+        this.normalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.normals), gl.STATIC_DRAW);
+        
+        // Create and populate the index buffer
+        this.indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.indices), gl.STATIC_DRAW);
+    };
+    
+    /**
+     * Update the position of the UV marker based on UV coordinates
+     */
+    this.updatePosition = function(uvCoords) {
+        this.uvCoords = uvCoords;
+    };
+    
+    /**
+     * Draw the UV marker
+     */
+    this.draw = function(shaderProgram, modelViewMatrix, projectionMatrix, surface) {
+        if (!surface) return; // Safety check
+        
+        // Calculate u and v values from the normalized UV coordinates
+        const u = this.uvCoords[0] * (surface.uMax - surface.uMin) + surface.uMin;
+        const v = this.uvCoords[1] * (surface.vMax - surface.vMin) + surface.vMin;
+        
+        // Get the 3D point on the surface at these UV coordinates
+        const point = surface.computePoint(u, v);
+        
+        // Bind vertex buffer and set attribute pointer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.vertexAttribPointer(shaderProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shaderProgram.iAttribVertex);
+        
+        // Bind normal buffer and set attribute pointer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.vertexAttribPointer(shaderProgram.iAttribNormal, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shaderProgram.iAttribNormal);
+        
+        // Bind index buffer
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        
+        // Set UV marker material properties (bright red color to make it stand out)
+        gl.uniform3fv(shaderProgram.iMaterialAmbient, [0.4, 0.0, 0.0]);
+        gl.uniform3fv(shaderProgram.iMaterialDiffuse, [1.0, 0.0, 0.0]);
+        gl.uniform3fv(shaderProgram.iMaterialSpecular, [1.0, 0.3, 0.3]);
+        gl.uniform1f(shaderProgram.iShininess, 30.0);
+        
+        // Create a model matrix for the marker
+        const markerModelMatrix = m4.translation(
+            point.x, 
+            point.y, 
+            point.z
+        );
+        
+        // Save the original model view matrix
+        const savedModelViewMatrix = new Float32Array(16);
+        for (let i = 0; i < 16; i++) {
+            savedModelViewMatrix[i] = modelViewMatrix[i];
+        }
+        
+        // Combine matrices
+        const markerModelViewMatrix = m4.multiply(modelViewMatrix, markerModelMatrix);
+        const markerMVP = m4.multiply(projectionMatrix, markerModelViewMatrix);
+        
+        // Calculate normal matrix for the marker
+        const markerNormalMatrix = calculateNormalMatrix(markerModelViewMatrix, new Float32Array(9));
+        
+        // Set the new matrices for drawing the marker
+        gl.uniformMatrix4fv(shaderProgram.iModelViewProjectionMatrix, false, markerMVP);
+        gl.uniformMatrix4fv(shaderProgram.iModelViewMatrix, false, markerModelViewMatrix);
+        gl.uniformMatrix3fv(shaderProgram.iNormalMatrix, false, markerNormalMatrix);
+        
+        // Draw the marker sphere
+        gl.drawElements(gl.TRIANGLES, this.numIndices, gl.UNSIGNED_SHORT, 0);
+        
+        // Restore the original modelview matrix
+        gl.uniformMatrix4fv(shaderProgram.iModelViewMatrix, false, savedModelViewMatrix);
+        
+        // Restore the original normal matrix
+        const originalNormalMatrix = calculateNormalMatrix(savedModelViewMatrix, new Float32Array(9));
+        gl.uniformMatrix3fv(shaderProgram.iNormalMatrix, false, originalNormalMatrix);
+    };
+}
+
 /**
  * LightSourceModel class for creating and rendering a visible light source
  */
@@ -817,6 +991,11 @@ function draw(timestamp) {
     // Draw the light source
     lightSource.draw(shProgram, modelViewMatrix, projectionMatrix);
     
+    // Draw the UV reference point marker
+    if (uvMarker) {
+        uvMarker.draw(shProgram, modelViewMatrix, projectionMatrix, surface);
+    }
+    
     // Request next frame for animation
     requestAnimationFrame(draw);
 }
@@ -961,6 +1140,10 @@ function initGL() {
     // Create light source model
     lightSource = new LightSourceModel();
     lightSource.initialize();
+    
+    // Create UV reference point marker
+    uvMarker = new UVMarker();
+    uvMarker.initialize();
     
     // Enable depth testing
     gl.enable(gl.DEPTH_TEST);
@@ -1141,6 +1324,11 @@ function setupKeyboardControls() {
         
         // Update UI to display current values
         updateTextureControlsDisplay();
+        
+        // Update the marker position to the new UV coordinates
+        if (uvMarker) {
+            uvMarker.updatePosition(texReferencePoint);
+        }
         
         if (needRedraw) {
             // Redraw the scene with updated values
