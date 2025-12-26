@@ -306,7 +306,7 @@ function CornucopiaModel() {
                 // Store vertex
                 this.vertices.push(point.x, point.y, point.z);
                 
-                // Calculate analytical normal for now (will be replaced with facet average)
+                // Calculate analytical normal for now (will be replaced with facet normal)
                 const normal = this.computeAnalyticalNormal(u, v);
                 this.normals.push(normal.x, normal.y, normal.z);
                 
@@ -407,74 +407,30 @@ function CornucopiaModel() {
     };
     
     /**
-     * Calculate vertex normals using facet average method
-     */
-    this.calculateFacetAverageNormals = function() {
-        // Reset normals array
-        this.normals = new Array(this.numVertices * 3).fill(0);
-        
-        // Get facet normals
-        const facetNormals = this.calculateFacetNormals();
-        
-        // Map to track which facets are adjacent to each vertex
-        const vertexFacets = new Array(this.numVertices).fill().map(() => []);
-        
-        // Associate each facet with its vertices
-        for (let i = 0; i < this.numIndices; i += 3) {
-            const faceIndex = i / 3;
-            const idx1 = this.indices[i];
-            const idx2 = this.indices[i + 1];
-            const idx3 = this.indices[i + 2];
-            
-            vertexFacets[idx1].push(faceIndex);
-            vertexFacets[idx2].push(faceIndex);
-            vertexFacets[idx3].push(faceIndex);
-        }
-        
-        // Calculate average normal for each vertex
-        for (let i = 0; i < this.numVertices; i++) {
-            let sumX = 0, sumY = 0, sumZ = 0;
-            
-            // Sum normals of all adjacent facets
-            for (const facetIdx of vertexFacets[i]) {
-                sumX += facetNormals[facetIdx].x;
-                sumY += facetNormals[facetIdx].y;
-                sumZ += facetNormals[facetIdx].z;
-            }
-            
-            // Normalize the result
-            const length = Math.sqrt(sumX*sumX + sumY*sumY + sumZ*sumZ);
-            if (length > 0) {
-                this.normals[i * 3] = sumX / length;
-                this.normals[i * 3 + 1] = sumY / length;
-                this.normals[i * 3 + 2] = sumZ / length;
-            } else {
-                // Default normal if length is zero
-                this.normals[i * 3] = 0;
-                this.normals[i * 3 + 1] = 0;
-                this.normals[i * 3 + 2] = 1;
-            }
-        }
-    };
-    
-    /**
      * Calculate tangent and bitangent vectors using Gram-Schmidt orthogonalization
-     * Variant 23: Prioritize tangent
+     * Variant 23: Prioritize tangent using facet normals directly
      */
-    this.calculateTangentsAndBitangents = function() {
+    this.calculateTangentsAndBitangentsWithFacetNormals = function() {
         // Initialize arrays
         this.tangents = new Array(this.numVertices * 3).fill(0);
         this.bitangents = new Array(this.numVertices * 3).fill(0);
         
-        // Temporary arrays to accumulate tangent/bitangent contributions from triangles
-        const tan1 = new Array(this.numVertices * 3).fill(0);
-        const tan2 = new Array(this.numVertices * 3).fill(0);
+        // Get facet normals
+        const facetNormals = this.calculateFacetNormals();
         
         // Calculate tangent and bitangent for each triangle
         for (let i = 0; i < this.numIndices; i += 3) {
+            const faceIndex = i / 3;
             const i1 = this.indices[i];
             const i2 = this.indices[i + 1];
             const i3 = this.indices[i + 2];
+            
+            // Get facet normal for this triangle
+            const facetNormal = [
+                facetNormals[faceIndex].x,
+                facetNormals[faceIndex].y,
+                facetNormals[faceIndex].z
+            ];
             
             // Get vertex positions
             const v1 = [this.vertices[i1 * 3], this.vertices[i1 * 3 + 1], this.vertices[i1 * 3 + 2]];
@@ -502,65 +458,30 @@ function CornucopiaModel() {
             
             // Calculate tangent and bitangent using the formula
             const r = 1.0 / (s1 * t2 - s2 * t1);
-            const sdir = [
+            const tangent = [
                 (t2 * x1 - t1 * x2) * r,
                 (t2 * y1 - t1 * y2) * r,
                 (t2 * z1 - t1 * z2) * r
             ];
-            const tdir = [
-                (s1 * x2 - s2 * x1) * r,
-                (s1 * y2 - s2 * y1) * r,
-                (s1 * z2 - s2 * z1) * r
-            ];
             
-            // Accumulate tangent and bitangent for each vertex of the triangle
-            for (const idx of [i1, i2, i3]) {
-                tan1[idx * 3] += sdir[0];
-                tan1[idx * 3 + 1] += sdir[1];
-                tan1[idx * 3 + 2] += sdir[2];
-                
-                tan2[idx * 3] += tdir[0];
-                tan2[idx * 3 + 1] += tdir[1];
-                tan2[idx * 3 + 2] += tdir[2];
+            // Normalize tangent
+            let tangentLen = Math.sqrt(tangent[0] * tangent[0] + tangent[1] * tangent[1] + tangent[2] * tangent[2]);
+            if (tangentLen > 0) {
+                tangent[0] /= tangentLen;
+                tangent[1] /= tangentLen;
+                tangent[2] /= tangentLen;
             }
-        }
-        
-        // Gram-Schmidt orthogonalization for each vertex (prioritizing tangent - variant 23)
-        for (let i = 0; i < this.numVertices; i++) {
-            const n = [
-                this.normals[i * 3],
-                this.normals[i * 3 + 1],
-                this.normals[i * 3 + 2]
-            ];
-            
-            const t = [
-                tan1[i * 3],
-                tan1[i * 3 + 1],
-                tan1[i * 3 + 2]
-            ];
-            
-            const b = [
-                tan2[i * 3],
-                tan2[i * 3 + 1],
-                tan2[i * 3 + 2]
-            ];
             
             // Variant 23: Prioritize tangent
-            // Step 1: Normalize the tangent
-            let tLen = Math.sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
-            if (tLen > 0) {
-                t[0] /= tLen;
-                t[1] /= tLen;
-                t[2] /= tLen;
-            }
+            // Step 1: We already have normalized tangent
             
             // Step 2: Orthogonalize normal with respect to tangent
             // n' = n - (n · t) * t
-            const nDotT = n[0] * t[0] + n[1] * t[1] + n[2] * t[2];
+            const nDotT = facetNormal[0] * tangent[0] + facetNormal[1] * tangent[1] + facetNormal[2] * tangent[2];
             const nPrime = [
-                n[0] - nDotT * t[0],
-                n[1] - nDotT * t[1],
-                n[2] - nDotT * t[2]
+                facetNormal[0] - nDotT * tangent[0],
+                facetNormal[1] - nDotT * tangent[1],
+                facetNormal[2] - nDotT * tangent[2]
             ];
             
             // Normalize the orthogonalized normal
@@ -571,35 +492,38 @@ function CornucopiaModel() {
                 nPrime[2] /= nPrimeLen;
             }
             
-            // Update the normal (we keep the orthogonalized version)
-            this.normals[i * 3] = nPrime[0];
-            this.normals[i * 3 + 1] = nPrime[1];
-            this.normals[i * 3 + 2] = nPrime[2];
-            
             // Step 3: Calculate bitangent as cross product of normal and tangent
-            // This ensures all three vectors are orthogonal
-            const bPrime = [
-                nPrime[1] * t[2] - nPrime[2] * t[1],
-                nPrime[2] * t[0] - nPrime[0] * t[2],
-                nPrime[0] * t[1] - nPrime[1] * t[0]
+            const bitangent = [
+                nPrime[1] * tangent[2] - nPrime[2] * tangent[1],
+                nPrime[2] * tangent[0] - nPrime[0] * tangent[2],
+                nPrime[0] * tangent[1] - nPrime[1] * tangent[0]
             ];
             
             // Normalize bitangent
-            let bPrimeLen = Math.sqrt(bPrime[0] * bPrime[0] + bPrime[1] * bPrime[1] + bPrime[2] * bPrime[2]);
-            if (bPrimeLen > 0) {
-                bPrime[0] /= bPrimeLen;
-                bPrime[1] /= bPrimeLen;
-                bPrime[2] /= bPrimeLen;
+            let bitangentLen = Math.sqrt(bitangent[0] * bitangent[0] + bitangent[1] * bitangent[1] + bitangent[2] * bitangent[2]);
+            if (bitangentLen > 0) {
+                bitangent[0] /= bitangentLen;
+                bitangent[1] /= bitangentLen;
+                bitangent[2] /= bitangentLen;
             }
             
-            // Store the orthogonalized tangent and bitangent
-            this.tangents[i * 3] = t[0];
-            this.tangents[i * 3 + 1] = t[1];
-            this.tangents[i * 3 + 2] = t[2];
-            
-            this.bitangents[i * 3] = bPrime[0];
-            this.bitangents[i * 3 + 1] = bPrime[1];
-            this.bitangents[i * 3 + 2] = bPrime[2];
+            // Store the same tangent, normal, and bitangent for each vertex of this triangle
+            for (const idx of [i1, i2, i3]) {
+                // Store facet normal (instead of averaged normal)
+                this.normals[idx * 3] = nPrime[0];
+                this.normals[idx * 3 + 1] = nPrime[1];
+                this.normals[idx * 3 + 2] = nPrime[2];
+                
+                // Store tangent
+                this.tangents[idx * 3] = tangent[0];
+                this.tangents[idx * 3 + 1] = tangent[1];
+                this.tangents[idx * 3 + 2] = tangent[2];
+                
+                // Store bitangent
+                this.bitangents[idx * 3] = bitangent[0];
+                this.bitangents[idx * 3 + 1] = bitangent[1];
+                this.bitangents[idx * 3 + 2] = bitangent[2];
+            }
         }
     };
     
@@ -615,11 +539,9 @@ function CornucopiaModel() {
         // Generate the mesh data
         this.generateMesh();
         
-        // Calculate facet average normals
-        this.calculateFacetAverageNormals();
-        
-        // Calculate tangents and bitangents with Gram-Schmidt orthogonalization (prioritizing tangent)
-        this.calculateTangentsAndBitangents();
+        // Instead of using averaged facet normals, use the facet normals directly
+        // and calculate tangents/bitangents with those normals (variant 23)
+        this.calculateTangentsAndBitangentsWithFacetNormals();
         
         // Create and populate the vertex buffer
         if (this.vertexBuffer) gl.deleteBuffer(this.vertexBuffer);
@@ -1280,7 +1202,7 @@ function init() {
         // Initial drawing of the scene
         draw();
         
-        console.log("3D Cornucopia surface initialized successfully with Phong shading and Facet Average normals!");
+        console.log("3D Cornucopia surface initialized successfully with Phong shading and Facet normals!");
     } catch (e) {
         console.error("ERROR: " + e);
         document.getElementById("canvas-holder").innerHTML = 
