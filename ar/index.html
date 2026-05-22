@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Control Task - AR Cornucopia Registration</title>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
+    <script src="./controltask.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #status-panel {
+            position: fixed;
+            left: 12px;
+            top: 12px;
+            z-index: 10;
+            max-width: 320px;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.72);
+            color: #00ff66;
+            border: 1px solid #00ff66;
+            font-size: 14px;
+            line-height: 1.35;
+        }
+
+        #marker-link {
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body>
+    <div id="status-panel">
+        Point the camera at the printed registration marker.<br>
+        Marker image: <a id="marker-link" href="./markers/controltask-marker.svg" target="_blank">open printable marker</a>
+    </div>
+
+    <a-scene
+        embedded
+        vr-mode-ui="enabled: false"
+        renderer="antialias: true; alpha: true; precision: medium"
+        arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best;">
+
+        <a-marker
+            id="control-marker"
+            type="pattern"
+            url="./markers/pattern-controltask.patt"
+            smooth="true"
+            smoothCount="5"
+            smoothTolerance="0.01"
+            smoothThreshold="2">
+            <a-entity
+                id="cornucopia-root"
+                cornucopia-surface
+                position="0 0.55 0"
+                rotation="-90 0 0"
+                scale="0.075 0.075 0.075">
+            </a-entity>
+        </a-marker>
+
+        <a-marker preset="hiro">
+            <a-entity
+                cornucopia-surface
+                position="0 0.55 0"
+                rotation="-90 0 0"
+                scale="0.075 0.075 0.075">
+            </a-entity>
+        </a-marker>
+
+        <a-entity camera></a-entity>
+    </a-scene>
+</body>
+</html>
