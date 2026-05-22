@@ -174,3 +174,53 @@ void main() {
     // Set final fragment color
     gl_FragColor = vec4(finalColor, 1.0);
 }`;
+
+const solidColorVertexShaderSource = `
+attribute vec3 vertex;
+
+uniform mat4 ModelViewProjectionMatrix;
+
+void main() {
+    gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
+}`;
+
+const solidColorFragmentShaderSource = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+   precision highp float;
+#else
+   precision mediump float;
+#endif
+
+uniform vec4 solidColor;
+
+void main() {
+    gl_FragColor = solidColor;
+}`;
+
+const videoVertexShaderSource = `
+attribute vec3 vertex;
+attribute vec2 texCoord;
+
+uniform mat4 ModelViewProjectionMatrix;
+
+varying vec2 fragTexCoord;
+
+void main() {
+    gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
+    fragTexCoord = texCoord;
+}`;
+
+const videoFragmentShaderSource = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+   precision highp float;
+#else
+   precision mediump float;
+#endif
+
+uniform sampler2D videoTexture;
+
+varying vec2 fragTexCoord;
+
+void main() {
+    gl_FragColor = texture2D(videoTexture, fragTexCoord);
+}`;

@@ -301,7 +301,11 @@
         </div>
         
         <div id="canvas-holder">
-            <canvas width="800" height="600" id="webglcanvas" style="background-color:white"></canvas>
+            <canvas width="800" height="900" id="webglcanvas" style="background-color:white"></canvas>
+            <div style="display: flex; flex-direction: column; width: 800px; margin: 8px auto 0; gap: 4px; font-weight: bold; color: #0f0;">
+                <span>Top view: stereo object visualization</span>
+                <span>Bottom view: stereo webcam visualization at zero parallax</span>
+            </div>
         </div>
 
         <div class="controls-panel" style="margin-top: 10px; width: 800px;">
@@ -328,6 +332,36 @@
                 <span id="tex-rotation-value" style="color: #0f0; font-weight: bold;">0.0°</span>
             </div>
         </div>
+
+        <div class="controls-panel" style="margin-top: 10px; width: 800px;">
+            <h3>Stereo Camera</h3>
+            <div class="slider-container">
+                <span class="slider-label">Eye Separation:</span>
+                <input type="range" min="0" max="5" value="1.2" step="0.05" class="slider" id="stereo-eye-separation">
+                <span class="slider-value" id="stereo-eye-value">1.20</span>
+            </div>
+            <div class="slider-container">
+                <span class="slider-label">FOV:</span>
+                <input type="range" min="20" max="90" value="45" step="1" class="slider" id="stereo-fov">
+                <span class="slider-value" id="stereo-fov-value">45</span>
+            </div>
+            <div class="slider-container">
+                <span class="slider-label">Near Clip:</span>
+                <input type="range" min="0.1" max="20" value="1" step="0.1" class="slider" id="stereo-near">
+                <span class="slider-value" id="stereo-near-value">1.0</span>
+            </div>
+            <div class="slider-container">
+                <span class="slider-label">Convergence:</span>
+                <input type="range" min="5" max="100" value="55" step="1" class="slider" id="stereo-convergence">
+                <span class="slider-value" id="stereo-convergence-value">55</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-label">Webcam:</span>
+                <span id="webcam-status" style="color: #0f0; font-weight: bold;">Starting...</span>
+            </div>
+        </div>
+
+        <video id="webcam-video" autoplay playsinline muted style="display:none;"></video>
 
         <div class="controls-panel">
             <h3>Surface Parameters</h3>
