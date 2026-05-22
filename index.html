@@ -377,7 +377,7 @@
                 <span class="parameter-label">Use Phone:</span>
                 <label style="color: #0f0; font-weight: bold;">
                     <input type="checkbox" id="sensor-enabled">
-                    Orientation control
+                    Sound source control
                 </label>
             </div>
             <div class="parameter-row">
@@ -390,7 +390,55 @@
             </div>
         </div>
 
+        <div class="controls-panel" style="margin-top: 10px; width: 800px;">
+            <h3>Spatial Audio</h3>
+            <div class="parameter-row">
+                <span class="parameter-label">Track:</span>
+                <span id="audio-track-name" style="color: #0f0; font-weight: bold;">song/song.mp3</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-label">Playback:</span>
+                <button id="audio-play-button" style="padding: 7px 12px; background-color: #0f0; color: black; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Play</button>
+                <button id="audio-stop-button" style="margin-left: 8px; padding: 7px 12px; background-color: #333; color: #0f0; border: 1px solid #0f0; border-radius: 4px; font-weight: bold; cursor: pointer;">Stop</button>
+                <label style="margin-left: 12px; color: #0f0; font-weight: bold;">
+                    <input type="checkbox" id="audio-loop">
+                    Loop
+                </label>
+            </div>
+            <div class="slider-container">
+                <span class="slider-label">Volume:</span>
+                <input type="range" min="0" max="1" value="0.8" step="0.01" class="slider" id="audio-volume">
+                <span class="slider-value" id="audio-volume-value">0.80</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-label">Filter:</span>
+                <label style="color: #0f0; font-weight: bold;">
+                    <input type="checkbox" id="audio-filter-enabled">
+                    High-pass filter
+                </label>
+            </div>
+            <div class="slider-container">
+                <span class="slider-label">Cutoff:</span>
+                <input type="range" min="80" max="5000" value="800" step="10" class="slider" id="audio-filter-frequency">
+                <span class="slider-value" id="audio-filter-frequency-value">800</span>
+            </div>
+            <div class="slider-container">
+                <span class="slider-label">Q:</span>
+                <input type="range" min="0.1" max="10" value="0.8" step="0.1" class="slider" id="audio-filter-q">
+                <span class="slider-value" id="audio-filter-q-value">0.8</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-label">Status:</span>
+                <span id="audio-status" style="color: #0f0; font-weight: bold;">Not initialized</span>
+            </div>
+            <div class="parameter-row">
+                <span class="parameter-label">Source:</span>
+                <span id="audio-source-position" style="color: #0f0; font-weight: bold;">0.00, 0.00, 0.00</span>
+            </div>
+        </div>
+
         <video id="webcam-video" autoplay playsinline muted style="display:none;"></video>
+        <audio id="spatial-audio" src="./song/song.mp3" preload="auto" crossorigin="anonymous" style="display:none;"></audio>
 
         <div class="controls-panel">
             <h3>Surface Parameters</h3>

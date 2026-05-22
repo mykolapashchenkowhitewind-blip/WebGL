@@ -55,6 +55,18 @@ let phoneOrientationMatrix = m4.identity();
 let phoneCalibrationMatrix = m4.identity();
 let latestSensorValues = [0, 0, 0];
 
+let audioContext = null;
+let spatialAudioElement = null;
+let audioSourceNode = null;
+let audioGainNode = null;
+let audioFilterNode = null;
+let audioPannerNode = null;
+let audioGraphInitialized = false;
+let audioFilterEnabled = false;
+let soundSourceModel = null;
+let soundSourcePosition = [0, 0, 0];
+let soundOrbitRadius = 12;
+
 function createStereoCamera(settings, aspectRatio) {
     const convergence = settings.convergence;
     const eyeSeparation = settings.eyeSeparation;
@@ -130,11 +142,7 @@ function orientationAnglesToMatrix(values) {
 }
 
 function getInteractionMatrix() {
-    if (!phoneOrientationEnabled) {
-        return spaceball.getViewMatrix();
-    }
-
-    return m4.multiply(phoneOrientationMatrix, phoneCalibrationMatrix);
+    return spaceball.getViewMatrix();
 }
 
 function handleSensorMessage(message) {
@@ -209,6 +217,160 @@ function disconnectSensorServer() {
 function calibratePhoneOrientation() {
     phoneCalibrationMatrix = m4.inverse(phoneOrientationMatrix);
     setSensorStatus(sensorConnected ? "Calibrated" : "Calibrated offline");
+}
+
+function setAudioStatus(text) {
+    const status = document.getElementById("audio-status");
+    if (status) {
+        status.textContent = text;
+    }
+}
+
+function setAudioSourcePositionText(position) {
+    const positionElement = document.getElementById("audio-source-position");
+    if (positionElement) {
+        positionElement.textContent = position.map(function(value) {
+            return Number(value).toFixed(2);
+        }).join(", ");
+    }
+}
+
+function setAudioParamValue(param, value) {
+    if (!param) return;
+    if (typeof param.setValueAtTime === "function" && audioContext) {
+        param.setValueAtTime(value, audioContext.currentTime);
+    } else {
+        param.value = value;
+    }
+}
+
+function connectAudioGraph() {
+    if (!audioSourceNode || !audioGainNode || !audioFilterNode || !audioPannerNode || !audioContext) return;
+
+    audioSourceNode.disconnect();
+    audioGainNode.disconnect();
+    audioFilterNode.disconnect();
+    audioPannerNode.disconnect();
+
+    audioSourceNode.connect(audioGainNode);
+    if (audioFilterEnabled) {
+        audioGainNode.connect(audioFilterNode);
+        audioFilterNode.connect(audioPannerNode);
+    } else {
+        audioGainNode.connect(audioPannerNode);
+    }
+    audioPannerNode.connect(audioContext.destination);
+}
+
+function initializeSpatialAudio() {
+    if (audioGraphInitialized) return true;
+
+    spatialAudioElement = document.getElementById("spatial-audio");
+    if (!spatialAudioElement) {
+        setAudioStatus("Audio element missing");
+        return false;
+    }
+
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+        setAudioStatus("WebAudio unavailable");
+        return false;
+    }
+
+    audioContext = new AudioContextCtor();
+    audioSourceNode = audioContext.createMediaElementSource(spatialAudioElement);
+    audioGainNode = audioContext.createGain();
+    audioFilterNode = audioContext.createBiquadFilter();
+    audioPannerNode = audioContext.createPanner();
+
+    audioGainNode.gain.value = parseFloat(document.getElementById("audio-volume").value || "0.8");
+    audioFilterNode.type = "highpass";
+    audioFilterNode.frequency.value = parseFloat(document.getElementById("audio-filter-frequency").value || "800");
+    audioFilterNode.Q.value = parseFloat(document.getElementById("audio-filter-q").value || "0.8");
+
+    audioPannerNode.panningModel = "HRTF";
+    audioPannerNode.distanceModel = "inverse";
+    audioPannerNode.refDistance = 1;
+    audioPannerNode.maxDistance = 100;
+    audioPannerNode.rolloffFactor = 1;
+    audioPannerNode.coneInnerAngle = 360;
+    audioPannerNode.coneOuterAngle = 360;
+
+    if (audioContext.listener.positionX) {
+        audioContext.listener.positionX.value = 0;
+        audioContext.listener.positionY.value = 0;
+        audioContext.listener.positionZ.value = 0;
+        audioContext.listener.forwardX.value = 0;
+        audioContext.listener.forwardY.value = 0;
+        audioContext.listener.forwardZ.value = -1;
+        audioContext.listener.upX.value = 0;
+        audioContext.listener.upY.value = 1;
+        audioContext.listener.upZ.value = 0;
+    } else {
+        audioContext.listener.setPosition(0, 0, 0);
+        audioContext.listener.setOrientation(0, 0, -1, 0, 1, 0);
+    }
+
+    connectAudioGraph();
+    audioGraphInitialized = true;
+    setAudioStatus("Ready");
+    return true;
+}
+
+function updatePannerPosition(position) {
+    if (!audioPannerNode || !audioContext) return;
+
+    if (audioPannerNode.positionX) {
+        setAudioParamValue(audioPannerNode.positionX, position[0]);
+        setAudioParamValue(audioPannerNode.positionY, position[1]);
+        setAudioParamValue(audioPannerNode.positionZ, position[2]);
+    } else {
+        audioPannerNode.setPosition(position[0], position[1], position[2]);
+    }
+}
+
+function updateSoundSourcePosition() {
+    const center = surface && surface.center ? surface.center : [0, 0, 0];
+    const fallbackAngle = performance.now() * 0.0004;
+    const azimuth = phoneOrientationEnabled ? latestSensorValues[0] * Math.PI / 180 : fallbackAngle;
+    const pitch = phoneOrientationEnabled ? latestSensorValues[1] * Math.PI / 180 : 0;
+    soundSourcePosition = [
+        center[0] + Math.cos(azimuth) * soundOrbitRadius,
+        center[1] + Math.sin(azimuth) * soundOrbitRadius,
+        center[2] + Math.sin(pitch) * 5
+    ];
+
+    if (soundSourceModel) {
+        soundSourceModel.updatePosition(soundSourcePosition);
+    }
+    updatePannerPosition(soundSourcePosition);
+    setAudioSourcePositionText(soundSourcePosition);
+}
+
+function playSpatialAudio() {
+    if (!initializeSpatialAudio()) return;
+
+    audioContext.resume().then(function() {
+        spatialAudioElement.play()
+            .then(function() {
+                setAudioStatus("Playing");
+            })
+            .catch(function(error) {
+                setAudioStatus("Playback error");
+                console.error("Could not play spatial audio:", error);
+            });
+    });
+}
+
+function stopSpatialAudio() {
+    if (!spatialAudioElement) {
+        spatialAudioElement = document.getElementById("spatial-audio");
+    }
+    if (spatialAudioElement) {
+        spatialAudioElement.pause();
+        spatialAudioElement.currentTime = 0;
+    }
+    setAudioStatus("Stopped");
 }
 
 /**
@@ -493,7 +655,14 @@ function LightSourceModel() {
     /**
      * Draw the light source
      */
-    this.draw = function(shaderProgram, modelViewMatrix, projectionMatrix) {
+    this.draw = function(shaderProgram, modelViewMatrix, projectionMatrix, material) {
+        const colors = material || {
+            ambient: [0.8, 0.8, 0.0],
+            diffuse: [1.0, 1.0, 0.0],
+            specular: [1.0, 1.0, 0.3],
+            shininess: 30.0
+        };
+
         // Bind vertex buffer and set attribute pointer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
         gl.vertexAttribPointer(shaderProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
@@ -507,11 +676,10 @@ function LightSourceModel() {
         // Bind index buffer
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
         
-        // Set light material properties (yellow color for the light source ball)
-        gl.uniform3fv(shaderProgram.iMaterialAmbient, [0.8, 0.8, 0.0]);
-        gl.uniform3fv(shaderProgram.iMaterialDiffuse, [1.0, 1.0, 0.0]);
-        gl.uniform3fv(shaderProgram.iMaterialSpecular, [1.0, 1.0, 0.3]);
-        gl.uniform1f(shaderProgram.iShininess, 30.0); // Some shininess for a more vibrant yellow
+        gl.uniform3fv(shaderProgram.iMaterialAmbient, colors.ambient);
+        gl.uniform3fv(shaderProgram.iMaterialDiffuse, colors.diffuse);
+        gl.uniform3fv(shaderProgram.iMaterialSpecular, colors.specular);
+        gl.uniform1f(shaderProgram.iShininess, colors.shininess);
         
         // Create a model matrix for the light source
         const lightModelMatrix = m4.translation(
@@ -547,6 +715,27 @@ function LightSourceModel() {
         // Restore the original normal matrix
         const originalNormalMatrix = calculateNormalMatrix(savedModelViewMatrix, new Float32Array(9));
         gl.uniformMatrix3fv(shaderProgram.iNormalMatrix, false, originalNormalMatrix);
+    };
+
+    this.drawSolid = function(shaderProgram, modelViewMatrix, projectionMatrix, color) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.vertexAttribPointer(shaderProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(shaderProgram.iAttribVertex);
+
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+
+        const sourceModelMatrix = m4.translation(
+            this.position[0],
+            this.position[1],
+            this.position[2]
+        );
+        const sourceModelViewMatrix = m4.multiply(modelViewMatrix, sourceModelMatrix);
+        const sourceMVP = m4.multiply(projectionMatrix, sourceModelViewMatrix);
+
+        shaderProgram.use();
+        gl.uniformMatrix4fv(shaderProgram.iModelViewProjectionMatrix, false, sourceMVP);
+        gl.uniform4fv(shaderProgram.iSolidColor, color || [0.1, 0.2, 1.0, 1.0]);
+        gl.drawElements(gl.TRIANGLES, this.numIndices, gl.UNSIGNED_SHORT, 0);
     };
 }
 
@@ -1293,6 +1482,10 @@ function drawObjectStereoEye(viewport, isLeftEye, stereoCamera, colorMask, light
     const projectionMatrix = isLeftEye ? stereoCamera.leftProjectionMatrix : stereoCamera.rightProjectionMatrix;
     const modelViewMatrix = buildModelViewMatrix(isLeftEye, stereoCamera);
     drawSurfacePass(modelViewMatrix, projectionMatrix, lightPosition);
+
+    if (soundSourceModel) {
+        soundSourceModel.drawSolid(lineProgram, modelViewMatrix, projectionMatrix, [0.05, 0.15, 1.0, 1.0]);
+    }
 }
 
 function drawObjectStereoView(viewport, lightPosition) {
@@ -1356,6 +1549,7 @@ function draw(timestamp) {
     
     // Update light source object position
     lightSource.updatePosition(lightPosition);
+    updateSoundSourcePosition();
 
     const canvasWidth = gl.canvas.width;
     const canvasHeight = gl.canvas.height;
@@ -1564,6 +1758,10 @@ function initGL() {
     uvMarker = new UVMarker();
     uvMarker.initialize();
 
+    soundSourceModel = new LightSourceModel();
+    soundSourceModel.radius = 0.8;
+    soundSourceModel.initialize();
+
     webcamPlane = new WebcamPlane();
     webcamPlane.initialize();
     initializeWebcam();
@@ -1718,6 +1916,7 @@ function setupControls() {
 
     setupStereoControls();
     setupSensorControls();
+    setupSpatialAudioControls();
 }
 
 function setupStereoControls() {
@@ -1792,12 +1991,97 @@ function setupSensorControls() {
     if (enabledCheckbox) {
         enabledCheckbox.addEventListener("change", function() {
             phoneOrientationEnabled = enabledCheckbox.checked;
-            setSensorStatus(phoneOrientationEnabled ? "Phone orientation enabled" : "Phone orientation disabled");
+            setSensorStatus(phoneOrientationEnabled ? "Phone controls sound source" : "Auto sound orbit");
         });
     }
 
     setSensorValues(latestSensorValues);
     setSensorStatus("Disconnected");
+}
+
+function setupSpatialAudioControls() {
+    const audioElement = document.getElementById("spatial-audio");
+    const playButton = document.getElementById("audio-play-button");
+    const stopButton = document.getElementById("audio-stop-button");
+    const loopCheckbox = document.getElementById("audio-loop");
+    const filterCheckbox = document.getElementById("audio-filter-enabled");
+    const volumeSlider = document.getElementById("audio-volume");
+    const volumeValue = document.getElementById("audio-volume-value");
+    const frequencySlider = document.getElementById("audio-filter-frequency");
+    const frequencyValue = document.getElementById("audio-filter-frequency-value");
+    const qSlider = document.getElementById("audio-filter-q");
+    const qValue = document.getElementById("audio-filter-q-value");
+
+    spatialAudioElement = audioElement;
+
+    if (audioElement) {
+        audioElement.addEventListener("canplaythrough", function() {
+            setAudioStatus("Ready");
+        });
+        audioElement.addEventListener("error", function() {
+            setAudioStatus("Could not load song/song.mp3");
+        });
+        audioElement.addEventListener("ended", function() {
+            setAudioStatus("Ended");
+        });
+    }
+
+    if (playButton) {
+        playButton.addEventListener("click", playSpatialAudio);
+    }
+
+    if (stopButton) {
+        stopButton.addEventListener("click", stopSpatialAudio);
+    }
+
+    if (loopCheckbox && audioElement) {
+        loopCheckbox.addEventListener("change", function() {
+            audioElement.loop = loopCheckbox.checked;
+        });
+    }
+
+    if (filterCheckbox) {
+        filterCheckbox.addEventListener("change", function() {
+            audioFilterEnabled = filterCheckbox.checked;
+            if (audioGraphInitialized) {
+                connectAudioGraph();
+            }
+            setAudioStatus(audioFilterEnabled ? "High-pass filter enabled" : "High-pass filter disabled");
+        });
+    }
+
+    if (volumeSlider && volumeValue) {
+        volumeSlider.addEventListener("input", function() {
+            const value = parseFloat(volumeSlider.value);
+            volumeValue.textContent = value.toFixed(2);
+            if (audioGainNode) {
+                setAudioParamValue(audioGainNode.gain, value);
+            }
+        });
+    }
+
+    if (frequencySlider && frequencyValue) {
+        frequencySlider.addEventListener("input", function() {
+            const value = parseFloat(frequencySlider.value);
+            frequencyValue.textContent = String(Math.round(value));
+            if (audioFilterNode) {
+                setAudioParamValue(audioFilterNode.frequency, value);
+            }
+        });
+    }
+
+    if (qSlider && qValue) {
+        qSlider.addEventListener("input", function() {
+            const value = parseFloat(qSlider.value);
+            qValue.textContent = value.toFixed(1);
+            if (audioFilterNode) {
+                setAudioParamValue(audioFilterNode.Q, value);
+            }
+        });
+    }
+
+    setAudioSourcePositionText(soundSourcePosition);
+    setAudioStatus("Waiting for Play");
 }
 
 /**
