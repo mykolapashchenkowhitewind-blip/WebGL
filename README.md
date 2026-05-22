@@ -274,11 +274,52 @@ This approach allows the same codebase to handle both scaling and rotation varia
 
 To work with the texture transformation features, follow these steps:
 
-1. **Open the application** in a compatible web browser (Chrome, Firefox, or Edge recommended)
+1. **Start a local static server** from the project folder. This is important because WebGL texture images may not load correctly when `index.html` is opened directly from the filesystem.
 
-2. **Observe the initial state** of the Cornucopia surface with the default texture mapping
+   In PowerShell:
 
-3. **Note the Texture Transformation panel** directly below the rendering canvas, which displays the current transformation parameters
+   ```powershell
+   cd "D:\PROJECT_ME\project_SHAME\INSTITUTKA\Semester_1\Visualisation\WebGL2"
+   python -m http.server 8000 --bind 127.0.0.1
+   ```
+
+   Keep this terminal window open while using the visualization.
+
+2. **Open the application** in a compatible web browser (Chrome, Firefox, or Edge recommended):
+
+   ```
+   http://127.0.0.1:8000/index.html
+   ```
+
+   If port `8000` is already busy, use another port, for example:
+
+   ```powershell
+   python -m http.server 8001 --bind 127.0.0.1
+   ```
+
+   Then open:
+
+   ```
+   http://127.0.0.1:8001/index.html
+   ```
+
+   To turn the server off, go back to the PowerShell window where it is running and press:
+
+   ```text
+   Ctrl + C
+   ```
+
+   If the server was started in the background and you know its process ID, stop it with:
+
+   ```powershell
+   Stop-Process -Id 20840
+   ```
+
+   Replace `20840` with the actual process ID shown when the server was started.
+
+3. **Observe the initial state** of the Cornucopia surface with the default texture mapping
+
+4. **Note the Texture Transformation panel** directly below the rendering canvas, which displays the current transformation parameters
 
 ## 4.2 Keyboard Controls
 

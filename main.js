@@ -2,8 +2,14 @@
 
 let gl;                         // The webgl context.
 let surface;                    // A surface model
+let surfaceWebCam;              // A substrate for webcam image
 let shProgram;                  // A shader program
 let spaceball;                  // A SimpleRotator object that lets the user rotate the view by mouse.
+let stereoCam;                  // Object holding stereo camera and its parameters
+
+let iTextureWebCam = null;
+
+let video;
 
 // Constructor
 function ShaderProgram(name, program) {
@@ -23,10 +29,6 @@ function ShaderProgram(name, program) {
     this.iModelViewMatrix = -1;
     // Location of the TMU0
     this.iTMU0 = -1;
-    // Location of the TMU1
-    this.iTMU1 = -1;
-    // Location of the TMU2
-    this.iTMU2 = -1;
 
     this.Use = function() {
         gl.useProgram(this.prog);
@@ -41,33 +43,81 @@ function ShaderProgram(name, program) {
 function draw() { 
     gl.clearColor(0,0,0,1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    
-    /* Set the values of the projection transformation */
-    let projection = m4.perspective(Math.PI/8, 1, 8, 12); 
-    
+
+    gl.uniform1i(shProgram.iTMU0, 0);
+
+    // PATH ZERO: DRAW ZERO PARALLAX WEBCAM
+
+    if (iTextureWebCam) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, iTextureWebCam);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0,0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    }
+
+    let matrOrth = m4.orthographic(0,1,0,1, 8,20);
+    gl.uniform1i(shProgram.bUseTexture, 1 );
+
+    // TODO: Place your code here to draw webCam surface
+
+
     /* Get the view matrix from the SimpleRotator object.*/
     let modelView = spaceball.getViewMatrix();
 
     let rotateToPointZero = m4.axisRotation([0.707,0.707,0], 0.7);
     let translateToPointZero = m4.translation(0,0,-10);
 
+    const colorPolygon = new Float32Array([0.5,0.5,0.5,1]);
+    const colorEdge    = new Float32Array([1,1,1,1]);
+
+    // The FIRST PASS (for the left eye)
+
+    let matrLeftFrustum = stereoCam.calcLeftFrustum();
+    gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, matrLeftFrustum);
+
+    let translateLeftEye = m4. translation(stereoCam.eyeSeparation/2, 0, 0);
+
     let matAccum0 = m4.multiply(rotateToPointZero, modelView );
-    let matAccum1 = m4.multiply(translateToPointZero, matAccum0 );
-        
-    /* Multiply the projection matrix times the modelview matrix to give the
-       combined transformation matrix, and send that to the shader program. */
-    let modelViewProjection = m4.multiply(projection, matAccum1 );
+    let matAccum1 = m4.multiply(translateLeftEye, matAccum0 );
+    let matAccum2 = m4.multiply(translateToPointZero, matAccum1 );
 
-    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, matAccum1 );
-    gl.uniformMatrix4fv(shProgram.iModelViewProjectionMatrix, false, modelViewProjection );
-    
-    /* Draw the six faces of a cube, with different colors. */
-    gl.uniform4fv(shProgram.iColor, [1,1,0,1] );
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, matAccum2 );
 
-    gl.uniform1i(shProgram.iTMU0, 0);
-    gl.uniform1i(shProgram.iTMU1, 1);
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(1,0);
 
+    gl.uniform1i(shProgram.bUseTexture, 0 );
+
+    gl.colorMask(true, false, false, true);
+    gl.uniform4fv(shProgram.iColor, colorPolygon );
     surface.Draw();
+    gl.uniform4fv(shProgram.iColor, colorEdge );
+    surface.DrawWireframe();
+
+    // The SECOND PASS (for the right eye)
+
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+
+    let matrRightFrustum = stereoCam.calcRightFrustum();
+    gl.uniformMatrix4fv(shProgram.iProjectionMatrix, false, matrRightFrustum);
+
+    let translateRightEye = m4. translation(-stereoCam.eyeSeparation/2, 0, 0);
+
+    matAccum0 = m4.multiply(rotateToPointZero, modelView );
+    matAccum1 = m4.multiply(translateRightEye, matAccum0 );
+    matAccum2 = m4.multiply(translateToPointZero, matAccum1 );
+
+    gl.uniformMatrix4fv(shProgram.iModelViewMatrix, false, matAccum2 );
+
+    gl.colorMask(false, true, true, true);
+    gl.uniform4fv(shProgram.iColor, colorPolygon );
+    surface.Draw();
+    gl.uniform4fv(shProgram.iColor, colorEdge );
+    surface.DrawWireframe();
+
+    // RESET specific params to their default state
+
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.colorMask(true, true, true, true);
 }
 
 
@@ -81,22 +131,34 @@ function initGL() {
 
     shProgram.iAttribVertex              = gl.getAttribLocation(prog, "vertex");
     shProgram.iAttribTexCoords           = gl.getAttribLocation(prog, "tex");
-    shProgram.iModelViewProjectionMatrix = gl.getUniformLocation(prog, "ModelViewProjectionMatrix");
     shProgram.iModelViewMatrix           = gl.getUniformLocation(prog, "ModelViewMatrix");
+    shProgram.iProjectionMatrix          = gl.getUniformLocation(prog, "ProjectionMatrix");
     shProgram.iColor                     = gl.getUniformLocation(prog, "color");
+    shProgram.bUseTexture                = gl.getUniformLocation(prog, "bUseTexture");
+
     shProgram.iTMU0                      = gl.getUniformLocation(prog, "iTMU0");
-    shProgram.iTMU1                      = gl.getUniformLocation(prog, "iTMU1");
-    shProgram.iTMU2                      = gl.getUniformLocation(prog, "iTMU2");
 
     let data = {};
-    
+
     CreateSurfaceData(data)
 
     surface = new Model('Surface');
     surface.BufferData(data.verticesF32, data.indicesU16, data.texcoordsF32);
 
-    surface.idTextureDiffuse  = LoadTexture("https://webglfundamentals.org/webgl/resources/f-texture.png");
-    surface.idTextureSpecular = LoadTexture("https://webglfundamentals.org/webgl/resources/keyboard.jpg");
+    surfaceWebCam = new Model('SurfaceWebCam');
+    // TODO: Place your code here to load two triangle geomtery
+    // surfaceWebCam.BufferData(???);
+
+    stereoCam = new StereoCamera(
+        .7,     // decimeters
+        14.0,   // decimeters
+        1.3,    // aspect ratio of canvas
+        0.4,    // radians
+        8.0,    // decimeters
+        20.0    // decimeters
+    );
+
+    surface.idTextureDiffuse  = LoadTexture();
 
     gl.enable(gl.DEPTH_TEST);
 }
@@ -159,6 +221,35 @@ function init() {
             "<p>Sorry, could not initialize the WebGL graphics context: " + e + "</p>";
         return;
     }
+
+    video = document.createElement('video');
+    video.autoplay = true;
+
+    // Connect to video stream
+    let constraints = {video: true};
+    navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+        video.srcObject = stream;
+
+        let track = stream.getVideoTracks()[0];
+        let settings = track.getSettings();
+
+        video.oncanplay = function () {
+            console.log("Video object is ready to render frames");
+            iTextureWebCam = CreateWebCamTexture(settings.width, settings.height);
+        };
+
+        // Fired when the browser has metadata (width, height, duration, etc.)
+        video.onloadedmetadata = function () {
+            console.log("Video object metadata is loaded:", video.videoWidth, video.videoHeight);
+            video.play();
+        };
+    })
+    .catch(function(err) {
+        console.log(err.name + ": " + err.message);
+    }
+    );
+
+    setInterval(draw, 1/20);
 
     spaceball = new TrackballRotator(canvas, draw, 0);
 

@@ -4,10 +4,9 @@ function deg2rad(angle) {
     return angle * Math.PI / 180;
 }
 
-
 // p: an array of xyz vertex coords
 // t: an array of uv tex coords
-function Vertex(p, t)
+function Vertex(p,t)
 {
     this.p = p;
     this.t = t;
@@ -29,13 +28,11 @@ function Model(name) {
     this.name = name;
     this.iVertexBuffer = gl.createBuffer();
     this.iTexCoordsBuffer = gl.createBuffer();
-    this.iIndexBuffer  = gl.createBuffer();
+    this.iIndexBuffer = gl.createBuffer();
     this.count = 0;
 
     // Identifier of a diffuse texture
     this.idTextureDiffuse  = -1;
-    this.idTextureSpecular = -1;
-
 
     this.BufferData = function(vertices, indices, texCoords) {
 
@@ -56,9 +53,6 @@ function Model(name) {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.idTextureDiffuse);
 
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this.idTextureSpecular);
-
         gl.bindBuffer(gl.ARRAY_BUFFER, this.iVertexBuffer);
         gl.vertexAttribPointer(shProgram.iAttribVertex, 3, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(shProgram.iAttribVertex);
@@ -72,8 +66,13 @@ function Model(name) {
         //gl.drawArrays(gl.LINE_STRIP, 0, this.count);
         gl.drawElements(gl.TRIANGLES, this.count, gl.UNSIGNED_SHORT, 0);
     }
-}
 
+    this.DrawWireframe = function() {
+
+        for (let p=0; p<this.count; p+=3)                    // offset in bytes (UNSIGNED_SHORT is two bytes)
+            gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, p*2);
+    }
+}
 
 function CreateSurfaceData(data)
 {
@@ -81,15 +80,17 @@ function CreateSurfaceData(data)
     let triangles = [];
 
     for (let i=0, ang = 0; i<72; i++, ang+=5) {
-        vertices.push( new Vertex( [Math.sin(deg2rad(ang)), 0, Math.cos(deg2rad(ang))], [ang/360, 0] ));
+        // TODO: replace with your equation
+        vertices.push( new Vertex( [Math.sin(deg2rad(ang)), 0, Math.cos(deg2rad(ang))], [ang/360, 0]  ));
     }
 
     for (let i=0, ang = 0; i<72; i++, ang+=5) {
 
+        // TODO: replace with your equation
         let v0ind = vertices.length;
-        vertices.push( new Vertex( [Math.sin(deg2rad(ang)), 1, Math.cos(deg2rad(ang))], [ang/360, 1] ));
+        vertices.push( new Vertex( [Math.sin(deg2rad(ang)), 1, Math.cos(deg2rad(ang))], [ang/360, 1]  ));
 
-        // v0    v2 
+        // v0    v2
         //   o - o
         //   | \ |
         //   o - o
@@ -116,10 +117,12 @@ function CreateSurfaceData(data)
             vertices[v0ind].triangles.push(trianInd2);
             vertices[v3ind].triangles.push(trianInd2);
             vertices[v1ind].triangles.push(trianInd2);
+
         }
+
     }
 
-    data.verticesF32 = new Float32Array(vertices.length*3);
+    data.verticesF32  = new Float32Array(vertices.length*3);
     data.texcoordsF32 = new Float32Array(vertices.length*2);
     for (let i=0, len=vertices.length; i<len; i++)
     {
