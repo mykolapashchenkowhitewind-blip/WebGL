@@ -48,6 +48,13 @@ let webcamTexture = null;
 let webcamReady = false;
 let webcamPlane = null;
 
+let sensorSocket = null;
+let sensorConnected = false;
+let phoneOrientationEnabled = false;
+let phoneOrientationMatrix = m4.identity();
+let phoneCalibrationMatrix = m4.identity();
+let latestSensorValues = [0, 0, 0];
+
 function createStereoCamera(settings, aspectRatio) {
     const convergence = settings.convergence;
     const eyeSeparation = settings.eyeSeparation;
@@ -92,6 +99,116 @@ function createStereoCamera(settings, aspectRatio) {
         leftViewOffsetMatrix: m4.translation(eyeSeparation / 2, 0, 0),
         rightViewOffsetMatrix: m4.translation(-eyeSeparation / 2, 0, 0)
     };
+}
+
+function setSensorStatus(text) {
+    const status = document.getElementById("sensor-status");
+    if (status) {
+        status.textContent = text;
+    }
+}
+
+function setSensorValues(values) {
+    const valuesElement = document.getElementById("sensor-values");
+    if (valuesElement) {
+        valuesElement.textContent = values.map(function(value) {
+            return Number(value).toFixed(2);
+        }).join(", ");
+    }
+}
+
+function orientationAnglesToMatrix(values) {
+    const z = values[0] * Math.PI / 180;
+    const x = values[1] * Math.PI / 180;
+    const y = values[2] * Math.PI / 180;
+
+    const rz = m4.zRotation(z);
+    const rx = m4.xRotation(x);
+    const ry = m4.yRotation(y);
+
+    return m4.multiply(ry, m4.multiply(rx, rz));
+}
+
+function getInteractionMatrix() {
+    if (!phoneOrientationEnabled) {
+        return spaceball.getViewMatrix();
+    }
+
+    return m4.multiply(phoneOrientationMatrix, phoneCalibrationMatrix);
+}
+
+function handleSensorMessage(message) {
+    let data;
+    try {
+        data = JSON.parse(message.data);
+    } catch (error) {
+        console.warn("Ignoring invalid sensor message:", error);
+        return;
+    }
+
+    if (!data.values || data.values.length < 3) {
+        return;
+    }
+
+    const values = data.values.slice(0, 3).map(Number);
+    if (!values.every(Number.isFinite)) {
+        return;
+    }
+
+    latestSensorValues = values;
+    phoneOrientationMatrix = orientationAnglesToMatrix(values);
+    setSensorValues(values);
+    setSensorStatus("Receiving data");
+}
+
+function connectSensorServer(url) {
+    disconnectSensorServer();
+    setSensorStatus("Connecting");
+
+    try {
+        sensorSocket = new WebSocket(url);
+    } catch (error) {
+        setSensorStatus("Error: invalid URL");
+        console.error("Could not create WebSocket:", error);
+        return;
+    }
+
+    sensorSocket.onopen = function() {
+        sensorConnected = true;
+        setSensorStatus("Connected");
+    };
+
+    sensorSocket.onmessage = handleSensorMessage;
+
+    sensorSocket.onerror = function(error) {
+        setSensorStatus("Error");
+        console.error("Sensor WebSocket error:", error);
+    };
+
+    sensorSocket.onclose = function() {
+        sensorConnected = false;
+        sensorSocket = null;
+        setSensorStatus("Disconnected");
+    };
+}
+
+function disconnectSensorServer() {
+    if (sensorSocket) {
+        const socket = sensorSocket;
+        sensorSocket = null;
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        socket.close();
+    }
+    sensorConnected = false;
+    setSensorStatus("Disconnected");
+}
+
+function calibratePhoneOrientation() {
+    phoneCalibrationMatrix = m4.inverse(phoneOrientationMatrix);
+    setSensorStatus(sensorConnected ? "Calibrated" : "Calibrated offline");
 }
 
 /**
@@ -1114,13 +1231,13 @@ function updateLightPosition(timestamp) {
 }
 
 function buildModelViewMatrix(isLeftEye, stereoCamera) {
-    const trackballMatrix = spaceball.getViewMatrix();
+    const interactionMatrix = getInteractionMatrix();
     const center = surface && surface.center ? surface.center : [0, 0, 0];
     const centerModel = m4.translation(-center[0], -center[1], -center[2]);
     const moveToNegativeParallax = m4.translation(0, 0, -stereoSettings.modelDepth);
     const eyeOffset = isLeftEye ? stereoCamera.leftViewOffsetMatrix : stereoCamera.rightViewOffsetMatrix;
 
-    return m4.multiply(eyeOffset, m4.multiply(moveToNegativeParallax, m4.multiply(trackballMatrix, centerModel)));
+    return m4.multiply(eyeOffset, m4.multiply(moveToNegativeParallax, m4.multiply(interactionMatrix, centerModel)));
 }
 
 function setSurfaceUniforms(modelViewMatrix, projectionMatrix, lightPosition) {
@@ -1600,6 +1717,7 @@ function setupControls() {
     }
 
     setupStereoControls();
+    setupSensorControls();
 }
 
 function setupStereoControls() {
@@ -1644,6 +1762,42 @@ function setupStereoControls() {
             requestAnimationFrame(draw);
         });
     });
+}
+
+function setupSensorControls() {
+    const urlInput = document.getElementById("sensor-url");
+    const connectButton = document.getElementById("sensor-connect-button");
+    const disconnectButton = document.getElementById("sensor-disconnect-button");
+    const calibrateButton = document.getElementById("sensor-calibrate-button");
+    const enabledCheckbox = document.getElementById("sensor-enabled");
+
+    if (connectButton && urlInput) {
+        connectButton.addEventListener("click", function() {
+            connectSensorServer(urlInput.value.trim());
+        });
+    }
+
+    if (disconnectButton) {
+        disconnectButton.addEventListener("click", function() {
+            disconnectSensorServer();
+        });
+    }
+
+    if (calibrateButton) {
+        calibrateButton.addEventListener("click", function() {
+            calibratePhoneOrientation();
+        });
+    }
+
+    if (enabledCheckbox) {
+        enabledCheckbox.addEventListener("change", function() {
+            phoneOrientationEnabled = enabledCheckbox.checked;
+            setSensorStatus(phoneOrientationEnabled ? "Phone orientation enabled" : "Phone orientation disabled");
+        });
+    }
+
+    setSensorValues(latestSensorValues);
+    setSensorStatus("Disconnected");
 }
 
 /**
